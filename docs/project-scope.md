@@ -165,17 +165,34 @@ Các hướng có thể xem xét cho phiên bản sau:
 - Dashboard và báo cáo nâng cao.
 - Audit log chi tiết hơn.
 
-## 9. Công nghệ dự kiến
+## 9. Công nghệ
 
-Theo định hướng hiện tại của repository:
+### 9.1. Stack đã thống nhất
 
-- Backend: C# / ASP.NET Core Web API
-- Frontend: React / TypeScript
-- Database: SQL Server
-- ORM: Entity Framework Core
+- Backend: Java 21 + Spring Boot
+- Frontend: React + TypeScript
+- Database: Microsoft SQL Server
+- ORM dự kiến: Spring Data JPA / Hibernate
+- Giao tiếp frontend–backend: REST API, dữ liệu JSON
 - Version Control: Git / GitHub
 
-Kiến trúc dự kiến cho V1 là **modular monolith / layered architecture**, không sử dụng microservices.
+### 9.2. Trạng thái triển khai hiện tại
+
+Backend đã được khởi tạo bằng Spring Boot (xem `backend/pom.xml`). Các dependency hiện có:
+
+- `spring-boot-starter-webmvc` — Web / REST API
+- `spring-boot-starter-validation` — Validation
+
+Các dependency sau **chưa được thêm vào `pom.xml`** và cần bổ sung ở bước triển khai:
+
+- Spring Data JPA + Hibernate (ORM)
+- Microsoft SQL Server JDBC Driver
+- Spring Security (authentication / authorization)
+- Công cụ quản lý database migration (ví dụ Flyway) — đề xuất sử dụng, nhưng chưa chốt chính thức
+
+### 9.3. Kiến trúc
+
+Kiến trúc dự kiến cho V1 là **modular monolith** kết hợp **layered architecture**, không sử dụng microservices.
 
 ## 10. Tiêu chí kiểm soát scope
 

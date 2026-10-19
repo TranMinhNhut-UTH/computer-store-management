@@ -390,7 +390,7 @@ Các API danh sách không nên trả về toàn bộ dữ liệu không giới 
 ### 4.4. Maintainability
 
 **NFR-MNT-01**  
-Backend phải tách biệt hợp lý giữa API/controller, business/service logic và data access/EF Core để tránh đặt toàn bộ nghiệp vụ trong controller.
+Backend phải tách biệt hợp lý giữa API/controller, business/service logic và data access layer để tránh đặt toàn bộ nghiệp vụ trong controller.
 
 **NFR-MNT-02**  
 API sử dụng DTO/request-response model phù hợp thay vì mặc định expose trực tiếp toàn bộ entity database.
@@ -399,7 +399,7 @@ API sử dụng DTO/request-response model phù hợp thay vì mặc định exp
 Các mã trạng thái, loại giao dịch và quy tắc quan trọng phải được biểu diễn nhất quán, tránh sử dụng magic string rải rác.
 
 **NFR-MNT-04**  
-Các thay đổi cấu trúc database phải được quản lý bằng EF Core migrations.
+Các thay đổi cấu trúc database phải được quản lý bằng công cụ database migration phù hợp (ví dụ Flyway hoặc tương đương).
 
 ---
 
