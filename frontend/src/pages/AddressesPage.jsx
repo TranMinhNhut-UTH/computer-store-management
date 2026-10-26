@@ -1,129 +1,103 @@
-import React, { useEffect, useState } from 'react';
-import { api, del, post, put } from '../api';
-import { Field, Form, Submit } from '../components/UI';
+import React, { useCallback, useEffect, useState } from 'react';
+import { del, get, post, put } from '../api';
+import { Empty, Field, Modal, Spinner } from '../components/ui';
+
+const EMPTY = { recipientName: '', phoneNumber: '', province: '', district: '', ward: '', street: '', defaultAddress: false };
 
 export default function AddressesPage({ go, busy }) {
-  const [addresses, setAddresses] = useState([]);
+  const [list, setList] = useState(null);
+  const [loadErr, setLoadErr] = useState('');
+  const [editing, setEditing] = useState(null);   // null | {id?, ...form}
 
-  async function loadAddresses() {
-    const d = await api('/api/me/addresses');
-    setAddresses(Array.isArray(d) ? d : []);
-    return d;
+  const load = useCallback(() => {
+    get('/api/me/addresses').then(setList).catch((e) => setLoadErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const set = (k) => (e) => setEditing({ ...editing, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+
+  async function save(e) {
+    e.preventDefault();
+    const { id, ...body } = editing;
+    const d = await go(() => (id ? put(`/api/me/addresses/${id}`, body) : post('/api/me/addresses', body)));
+    if (d) { setEditing(null); load(); }
   }
 
-  useEffect(() => {
-    go(loadAddresses);
-  }, []);
+  async function makeDefault(id) {
+    if (await go(() => put(`/api/me/addresses/${id}/default`))) load();
+  }
 
-  const handleAddAddress = async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const f = Object.fromEntries(new FormData(form));
-    const payload = {
-      recipientName: f.recipientName,
-      phoneNumber: f.phoneNumber,
-      province: f.province,
-      district: f.district,
-      ward: f.ward,
-      street: f.street,
-      defaultAddress: f.defaultAddress === 'on',
-      latitude: null,
-      longitude: null,
-    };
+  async function remove(a) {
+    if (!window.confirm(`Xóa địa chỉ của "${a.recipientName}"?`)) return;
+    if (await go(() => del(`/api/me/addresses/${a.id}`))) load();
+  }
 
-    await go(async () => {
-      const d = await post('/api/me/addresses', payload);
-      await loadAddresses();
-      form.reset();
-      return d;
-    });
-  };
-
-  const handleSetDefault = (id) => {
-    go(async () => {
-      await put(`/api/me/addresses/${id}/default`, {});
-      return await loadAddresses();
-    });
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm('Bạn có chắc muốn xóa địa chỉ nhận hàng này?')) {
-      go(async () => {
-        await del(`/api/me/addresses/${id}`);
-        return await loadAddresses();
-      });
-    }
-  };
+  if (loadErr) return <div className="error">{loadErr}</div>;
+  if (!list) return <div className="card"><Spinner /></div>;
 
   return (
-    <div className="layout">
-      <div className="card">
-        <Form
-          title="Thêm địa chỉ giao linh kiện"
-          subtitle="Nhập chính xác địa chỉ để đội ngũ kỹ thuật giao và lắp đặt PC tận nơi."
-          onSubmit={handleAddAddress}
-          busy={busy}
-        >
-          <div className="grid-2">
-            <Field name="recipientName" label="Họ tên người nhận" placeholder="Nguyễn Văn A" required />
-            <Field name="phoneNumber" label="Số điện thoại" placeholder="09xxxxxxxx" required />
-          </div>
-          <div className="grid-3">
-            <Field name="province" label="Tỉnh / Thành phố" placeholder="TP. Hồ Chí Minh" required />
-            <Field name="district" label="Quận / Huyện" placeholder="Quận 1" required />
-            <Field name="ward" label="Phường / Xã" placeholder="Phường Bến Nghé" required />
-          </div>
-          <Field
-            name="street"
-            label="Số nhà, tên đường, tòa nhà"
-            placeholder="Số 123 Đường Lê Lợi..."
-            required
-          />
-          <label className="checkbox-label">
-            <input type="checkbox" name="defaultAddress" /> Đặt làm địa chỉ nhận hàng mặc định
-          </label>
-          <Submit disabled={busy}>+ Lưu địa chỉ nhận hàng</Submit>
-        </Form>
+    <>
+      <div className="section-head">
+        <h2>Địa chỉ nhận hàng ({list.length})</h2>
+        <button className="btn btn-primary" onClick={() => setEditing({ ...EMPTY })}>+ Thêm địa chỉ</button>
       </div>
 
-      <div className="card">
-        <div className="bar">
-          <h2>Sổ địa chỉ của bạn ({addresses.length})</h2>
-          <button type="button" onClick={() => go(loadAddresses)}>
-            Làm mới
-          </button>
+      {list.length === 0 ? (
+        <div className="card">
+          <Empty icon="📦" title="Bạn chưa lưu địa chỉ nào" text="Thêm địa chỉ để đặt hàng và hẹn lắp máy tại nhà nhanh hơn.">
+            <button className="btn btn-primary" onClick={() => setEditing({ ...EMPTY })}>Thêm địa chỉ đầu tiên</button>
+          </Empty>
         </div>
-
-        <div className="items">
-          {addresses.map((a) => (
-            <article key={a.id} className={a.defaultAddress ? 'address-default' : ''}>
-              <div className="bar" style={{ marginBottom: '6px' }}>
-                <b>
-                  📦 {a.recipientName}
-                  {a.defaultAddress && <span className="badge">Mặc định</span>}
-                </b>
-                <span className="phone-tag">{a.phoneNumber}</span>
+      ) : (
+        <div className="addr-grid">
+          {list.map((a) => (
+            <div key={a.id} className={`addr-card ${a.defaultAddress ? 'default' : ''}`}>
+              <div className="row">
+                <strong>{a.recipientName}</strong>
+                {a.defaultAddress && <span className="badge b-red">Mặc định</span>}
               </div>
-              <p>
-                {[a.street, a.ward, a.district, a.province].filter(Boolean).join(', ')}
-              </p>
-              <div className="address-actions">
-                {!a.defaultAddress && (
-                  <button type="button" onClick={() => handleSetDefault(a.id)}>
-                    Thiết lập mặc định
-                  </button>
-                )}
-                <button type="button" className="danger-outline" onClick={() => handleDelete(a.id)}>
-                  Xóa địa chỉ
-                </button>
+              <span>{a.phoneNumber}</span>
+              <span className="muted">{a.street}, {a.ward}, {a.district}, {a.province}</span>
+              <div className="acts">
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ ...a })}>Sửa</button>
+                {!a.defaultAddress && <button className="btn btn-outline btn-sm" disabled={busy} onClick={() => makeDefault(a.id)}>Đặt làm mặc định</button>}
+                <button className="btn btn-danger btn-sm" disabled={busy} onClick={() => remove(a)}>Xóa</button>
               </div>
-            </article>
+            </div>
           ))}
-          {!addresses.length && (
-            <p className="muted">Bạn chưa lưu địa chỉ giao hàng nào. Hãy thêm địa chỉ ở khung bên trái.</p>
-          )}
         </div>
-      </div>
-    </div>
+      )}
+
+      {editing && (
+        <Modal
+          title={editing.id ? 'Sửa địa chỉ' : 'Thêm địa chỉ mới'}
+          onClose={() => setEditing(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)}>Hủy</button>
+              <button type="submit" form="addr-form" className="btn btn-primary" disabled={busy}>Lưu địa chỉ</button>
+            </>
+          }
+        >
+          <form id="addr-form" onSubmit={save}>
+            <div className="grid-2">
+              <Field label="Người nhận"><input value={editing.recipientName} onChange={set('recipientName')} maxLength={150} required /></Field>
+              <Field label="Số điện thoại"><input value={editing.phoneNumber} onChange={set('phoneNumber')} inputMode="tel" required /></Field>
+            </div>
+            <div className="grid-2">
+              <Field label="Tỉnh / Thành phố"><input value={editing.province} onChange={set('province')} required /></Field>
+              <Field label="Quận / Huyện"><input value={editing.district} onChange={set('district')} required /></Field>
+            </div>
+            <div className="grid-2">
+              <Field label="Phường / Xã"><input value={editing.ward} onChange={set('ward')} required /></Field>
+              <Field label="Số nhà, tên đường"><input value={editing.street} onChange={set('street')} required /></Field>
+            </div>
+            <label className="check-row">
+              <input type="checkbox" checked={!!editing.defaultAddress} onChange={set('defaultAddress')} /> Đặt làm địa chỉ mặc định
+            </label>
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }

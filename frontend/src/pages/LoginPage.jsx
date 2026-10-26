@@ -1,182 +1,142 @@
 import React, { useState } from 'react';
 import { post } from '../api';
-import { Field, Form, Submit } from '../components/UI';
+import { Field } from '../components/ui';
+import { passwordProblem } from '../utils';
 
-const LOGIN_TABS = [
-  ['login', 'Đăng nhập'],
-  ['register', 'Đăng ký thành viên'],
-];
+export function AuthHero() {
+  return (
+    <aside className="auth-hero">
+      <div className="logo">
+        CS <span>Computer Store</span>
+      </div>
+      <div>
+        <h1>Linh kiện chính hãng, build PC đúng nhu cầu.</h1>
+        <p className="lead">Chọn linh kiện, kiểm tra tương thích tự động và nhận máy lắp sẵn tại cửa hàng hoặc tận nơi.</p>
+        <ul className="perk-list">
+          <li><span className="ico">✅</span> Kiểm tra tương thích CPU, mainboard, RAM, nguồn trước khi mua</li>
+          <li><span className="ico">🛡️</span> Bảo hành theo số serial, tra cứu mọi lúc</li>
+          <li><span className="ico">🔧</span> Lắp ráp, vệ sinh, sửa chữa tại cửa hàng hoặc tại nhà</li>
+          <li><span className="ico">♻️</span> Thu cũ đổi mới, trợ giá khi nâng cấp</li>
+        </ul>
+      </div>
+      <small>Hotline kỹ thuật 1900 6868 · 8:00 – 21:30 mỗi ngày</small>
+    </aside>
+  );
+}
 
-export default function LoginPage({
-  go,
-  busy,
-  msg,
-  err,
-  onLoginSuccess,
-  onGoToVerifyRecovery,
-}) {
-  const [mode, setMode] = useState('login');
+export default function LoginPage({ go, busy, msg, err, onLoginSuccess, onGoToVerifyRecovery }) {
+  const [tab, setTab] = useState('login');
+  const [login, setLogin] = useState({ identifier: '', password: '' });
+  const [reg, setReg] = useState({ fullName: '', email: '', phoneNumber: '', password: '', confirm: '' });
+  const [localErr, setLocalErr] = useState('');
 
-  const handleLogin = async (e) => {
+  const setL = (k) => (e) => setLogin({ ...login, [k]: e.target.value });
+  const setR = (k) => (e) => setReg({ ...reg, [k]: e.target.value });
+
+  async function submitLogin(e) {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.currentTarget));
-    const res = await go(() =>
-      post('/api/auth/login', {
-        identifier: f.identifier,
-        password: f.password,
+    setLocalErr('');
+    const d = await go(() => post('/api/auth/login', { identifier: login.identifier.trim(), password: login.password }));
+    if (d?.accessToken) onLoginSuccess(d);
+  }
+
+  async function submitRegister(e) {
+    e.preventDefault();
+    setLocalErr('');
+    if (!reg.email.trim() && !reg.phoneNumber.trim()) return setLocalErr('Vui lòng nhập email hoặc số điện thoại.');
+    const pwErr = passwordProblem(reg.password);
+    if (pwErr) return setLocalErr(pwErr);
+    if (reg.password !== reg.confirm) return setLocalErr('Mật khẩu nhập lại không khớp.');
+
+    const d = await go(() =>
+      post('/api/auth/register', {
+        fullName: reg.fullName.trim(),
+        email: reg.email.trim() || undefined,
+        phoneNumber: reg.phoneNumber.trim() || undefined,
+        password: reg.password,
       })
     );
-    if (res?.accessToken && onLoginSuccess) {
-      onLoginSuccess();
-    }
-  };
+    if (d) onGoToVerifyRecovery('verify', reg.email.trim() || reg.phoneNumber.trim());
+  }
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.currentTarget));
-    const payload = {
-      fullName: f.fullName,
-      email: f.email || null,
-      phoneNumber: f.phoneNumber || null,
-      password: f.password,
-    };
-    const res = await go(() => post('/api/auth/register', payload));
-    if (res) {
-      const identifier = f.email || f.phoneNumber || '';
-      onGoToVerifyRecovery('verify', identifier);
-    }
-  };
+  const needVerify = err.includes('chưa được xác thực');
 
   return (
-    <div className="auth-screen">
-      <div className="auth-grid">
-        {/* Cột giới thiệu thương hiệu Linh kiện PC */}
-        <div className="auth-showcase">
-          <div className="tech-badge">⚡ NEXT-GEN PC HARDWARE STORE</div>
-          <h1>
-            Nâng cấp cấu hình, <br />
-            <span>Bứt phá hiệu năng.</span>
-          </h1>
-          <p>
-            Hệ thống phân phối chính hãng CPU, VGA, Mainboard, RAM, SSD & Hi-End Custom PC dành cho Game thủ và Creator chuyên nghiệp.
+    <div className="auth-shell">
+      <AuthHero />
+      <section className="auth-panel">
+        <div className="auth-card">
+          <h2>{tab === 'login' ? 'Chào mừng trở lại' : 'Tạo tài khoản'}</h2>
+          <p className="sub">
+            {tab === 'login' ? 'Đăng nhập để xem giỏ hàng, đơn hàng và bảo hành.' : 'Chỉ mất một phút. Mã OTP sẽ được gửi để xác thực.'}
           </p>
-          <div className="hardware-specs">
-            <div className="spec-item">
-              <strong>RTX 50-Series</strong>
-              <span>Kiến trúc GPU thế hệ mới</span>
-            </div>
-            <div className="spec-item">
-              <strong>DDR5 & PCIe 5.0</strong>
-              <span>Tốc độ băng thông cực đại</span>
-            </div>
-            <div className="spec-item">
-              <strong>Bảo hành 36T</strong>
-              <span>Lỗi 1 đổi 1 tận nơi</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Cột Form Đăng nhập / Đăng ký */}
-        <div className="auth-container">
-          <div className="auth-brand">
-            <div className="logo">
-              CS <span>COMPUTER STORE</span>
-            </div>
-            <small>CỔNG TÀI KHOẢN KHÁCH HÀNG & QUẢN TRỊ</small>
+          <div className="tabs" role="tablist">
+            <button type="button" role="tab" className={tab === 'login' ? 'active' : ''} onClick={() => { setTab('login'); setLocalErr(''); }}>
+              Đăng nhập
+            </button>
+            <button type="button" role="tab" className={tab === 'register' ? 'active' : ''} onClick={() => { setTab('register'); setLocalErr(''); }}>
+              Đăng ký
+            </button>
           </div>
 
-          <section className="card auth-card">
-            <div className="tabs">
-              {LOGIN_TABS.map(([id, label]) => (
-                <button
-                  type="button"
-                  className={mode === id ? 'sel' : ''}
-                  onClick={() => setMode(id)}
-                  key={id}
-                >
-                  {label}
+          {msg && <div className="notice">{msg}</div>}
+          {(localErr || err) && <div className="error">{localErr || err}</div>}
+
+          {tab === 'login' ? (
+            <form onSubmit={submitLogin}>
+              <Field label="Email hoặc số điện thoại">
+                <input value={login.identifier} onChange={setL('identifier')} placeholder="vd: 0912345678" autoComplete="username" required />
+              </Field>
+              <Field label="Mật khẩu">
+                <input type="password" value={login.password} onChange={setL('password')} autoComplete="current-password" required />
+              </Field>
+              <div className="auth-links">
+                {needVerify ? (
+                  <button type="button" className="link-btn" onClick={() => onGoToVerifyRecovery('verify', login.identifier)}>
+                    Nhập mã OTP để xác thực
+                  </button>
+                ) : <span />}
+                <button type="button" className="link-btn" onClick={() => onGoToVerifyRecovery('forgot', login.identifier)}>
+                  Quên mật khẩu?
                 </button>
-              ))}
-            </div>
-
-            {msg && <div className="notice">{msg}</div>}
-            {err && <div className="error">{err}</div>}
-
-            {mode === 'login' && (
-              <Form
-                title="Đăng nhập hệ thống"
-                subtitle="Nhập thông tin tài khoản để mua sắm linh kiện và theo dõi bảo hành."
-                onSubmit={handleLogin}
-                busy={busy}
-              >
-                <Field
-                  name="identifier"
-                  label="Email hoặc Số điện thoại"
-                  placeholder="VD: gamer@computerstore.vn"
-                  required
-                />
-                <Field
-                  name="password"
-                  label="Mật khẩu"
-                  type="password"
-                  placeholder="••••••••"
-                  required
-                />
-                <Submit disabled={busy}>Đăng nhập ngay</Submit>
-
-                <div className="auth-links">
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => onGoToVerifyRecovery('forgot')}
-                  >
-                    Quên mật khẩu?
-                  </button>
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => onGoToVerifyRecovery('verify')}
-                  >
-                    Kích hoạt mã OTP →
-                  </button>
-                </div>
-              </Form>
-            )}
-
-            {mode === 'register' && (
-              <Form
-                title="Đăng ký tài khoản mới"
-                subtitle="Trở thành thành viên để nhận ưu đãi Build PC và tích điểm đổi quà."
-                onSubmit={handleRegister}
-                busy={busy}
-              >
-                <Field name="fullName" label="Họ và tên" placeholder="Nguyễn Văn A" required />
-                <Field name="email" label="Địa chỉ Email" type="email" placeholder="you@example.com" />
-                <Field name="phoneNumber" label="Số điện thoại" placeholder="09xxxxxxxx" />
-                <Field
-                  name="password"
-                  label="Mật khẩu bảo mật (tối thiểu 8 ký tự)"
-                  type="password"
-                  minLength="8"
-                  placeholder="Tối thiểu 8 ký tự"
-                  required
-                />
-                <Submit disabled={busy}>Đăng ký & Nhận mã OTP</Submit>
-
-                <div className="auth-links">
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => onGoToVerifyRecovery('verify')}
-                  >
-                    Đã nhận được mã OTP? Nhập mã ngay →
-                  </button>
-                </div>
-              </Form>
-            )}
-          </section>
+              </div>
+              <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
+                {busy ? 'Đang đăng nhập…' : 'Đăng nhập'}
+              </button>
+              <p className="auth-foot">
+                Chưa có tài khoản? <button type="button" className="link-btn" onClick={() => setTab('register')}>Đăng ký ngay</button>
+              </p>
+            </form>
+          ) : (
+            <form onSubmit={submitRegister}>
+              <Field label="Họ và tên">
+                <input value={reg.fullName} onChange={setR('fullName')} minLength={2} maxLength={150} autoComplete="name" required />
+              </Field>
+              <div className="grid-2">
+                <Field label="Email">
+                  <input type="email" value={reg.email} onChange={setR('email')} autoComplete="email" />
+                </Field>
+                <Field label="Số điện thoại">
+                  <input value={reg.phoneNumber} onChange={setR('phoneNumber')} inputMode="tel" autoComplete="tel" />
+                </Field>
+              </div>
+              <Field label="Mật khẩu" hint="Ít nhất 8 ký tự, gồm cả chữ và số.">
+                <input type="password" value={reg.password} onChange={setR('password')} autoComplete="new-password" required />
+              </Field>
+              <Field label="Nhập lại mật khẩu">
+                <input type="password" value={reg.confirm} onChange={setR('confirm')} autoComplete="new-password" required />
+              </Field>
+              <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
+                {busy ? 'Đang tạo tài khoản…' : 'Tạo tài khoản'}
+              </button>
+              <p className="auth-foot">
+                Đã có tài khoản? <button type="button" className="link-btn" onClick={() => setTab('login')}>Đăng nhập</button>
+              </p>
+            </form>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

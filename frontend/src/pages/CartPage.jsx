@@ -1,169 +1,135 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api';
-import { formatVND } from '../data/products';
+import { get } from '../api';
+import { Empty } from '../components/ui';
+import { formatVND } from '../utils';
 
-export default function CartPage({
-  cart,
-  onUpdateQty,
-  onRemoveItem,
-  onClearCart,
-  onGoToShop,
-  onGoToAddresses,
-  flash,
-}) {
-  const [addresses, setAddresses] = useState([]);
-  const [selectedAddressId, setSelectedAddressId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('COD');
-  const [checkoutDone, setCheckoutDone] = useState(null);
+const PAYMENTS = [
+  ['COD', '💵 Thanh toán khi nhận hàng (COD)'],
+  ['QR', '🏦 Chuyển khoản QR ngân hàng'],
+  ['VNPAY', '💳 VNPay'],
+  ['MOMO', '📱 Ví MoMo'],
+  ['ZALOPAY', '📲 ZaloPay'],
+];
+
+// Mã giảm giá minh họa; sau này lấy từ API khuyến mãi
+const COUPONS = {
+  CS10: { label: 'Giảm 10% (tối đa 500.000đ)', calc: (sub) => Math.min(Math.round(sub * 0.1), 500000), freeShip: false },
+  FREESHIP: { label: 'Miễn phí vận chuyển', calc: () => 0, freeShip: true },
+};
+
+export default function CartPage({ cart, onUpdateQty, onRemoveItem, onClearCart, onGoToShop, onGoToAddresses, flash }) {
+  const [addresses, setAddresses] = useState(null);
+  const [addrId, setAddrId] = useState(null);
+  const [pay, setPay] = useState('COD');
+  const [code, setCode] = useState('');
+  const [coupon, setCoupon] = useState(null);
 
   useEffect(() => {
-    api('/api/me/addresses')
-      .then((d) => {
-        const list = Array.isArray(d) ? d : [];
+    get('/api/me/addresses')
+      .then((list) => {
         setAddresses(list);
-        const def = list.find((a) => a.defaultAddress) || list[0];
-        if (def) setSelectedAddressId(String(def.id));
+        setAddrId((list.find((a) => a.defaultAddress) || list[0])?.id ?? null);
       })
-      .catch(() => {});
+      .catch(() => setAddresses([]));
   }, []);
 
-  const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const discount = coupon ? coupon.calc(subtotal) : 0;
+  const shipping = subtotal === 0 || subtotal >= 2000000 || coupon?.freeShip ? 0 : 30000;
+  const total = subtotal - discount + shipping;
 
-  const handleCheckout = (e) => {
-    e.preventDefault();
-    if (!cart.length) return;
-    const code = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-    setCheckoutDone({
-      code,
-      totalItems,
-      totalPrice,
-      paymentMethod,
-    });
-    onClearCart();
-    flash(`Đặt mua linh kiện thành công! Mã đơn hàng: ${code}`);
+  const applyCoupon = () => {
+    const c = COUPONS[code.trim().toUpperCase()];
+    if (!c) return flash('Mã giảm giá không hợp lệ hoặc đã hết hạn.', true);
+    setCoupon(c);
+    flash(`Đã áp dụng mã: ${c.label}`);
   };
 
-  return (
-    <div className="layout">
+  const checkout = () => {
+    if (!addrId) return flash('Vui lòng chọn địa chỉ nhận hàng.', true);
+    flash('Giao diện đặt hàng đã sẵn sàng. Tính năng tạo đơn sẽ hoạt động khi module Đơn hàng ở backend hoàn thành.');
+  };
+
+  if (cart.length === 0) {
+    return (
       <div className="card">
-        <div className="bar">
-          <h2>Giỏ hàng linh kiện rời ({totalItems} sản phẩm)</h2>
-          {cart.length > 0 && (
-            <button type="button" className="danger-outline" onClick={onClearCart}>
-              Xóa toàn bộ giỏ
-            </button>
-          )}
-        </div>
+        <Empty icon="🛒" title="Giỏ hàng đang trống" text="Chọn vài linh kiện hoặc tự build một bộ PC để bắt đầu.">
+          <button className="btn btn-primary" onClick={onGoToShop}>Tiếp tục mua sắm</button>
+        </Empty>
+      </div>
+    );
+  }
 
-        {checkoutDone && (
-          <div className="notice" style={{ display: 'block' }}>
-            <b>✅ Đặt hàng thành công — Mã đơn: {checkoutDone.code}</b>
-            <div>Tổng thanh toán: <b>{formatVND(checkoutDone.totalPrice)}</b> ({checkoutDone.paymentMethod})</div>
+  return (
+    <div className="cart-layout">
+      <div>
+        <div className="card">
+          <div className="card-head">
+            <h2>Sản phẩm ({cart.reduce((s, i) => s + i.qty, 0)})</h2>
+            <button className="btn btn-danger btn-sm" onClick={onClearCart}>Xóa giỏ hàng</button>
           </div>
-        )}
-
-        {cart.length === 0 ? (
-          <div className="empty-state">
-            <p className="muted">Giỏ hàng của bạn đang trống.</p>
-            <button type="button" className="primary" style={{ maxWidth: '320px', marginTop: '12px' }} onClick={onGoToShop}>
-              ← Tiếp tục chọn mua linh kiện rời
-            </button>
-          </div>
-        ) : (
-          <div className="items">
-            {cart.map((item) => (
-              <article key={item.id} className="cart-item-row">
+          {cart.map((i) => (
+            <div key={i.id} className="cart-item">
+              <div className="cart-thumb">{i.icon}</div>
+              <div>
+                <h4>{i.name}</h4>
+                <span className="muted" style={{ fontSize: 13 }}>{i.brand}</span>
                 <div>
-                  <span className="cat-tag">{item.category}</span>{' '}
-                  <b>{item.name}</b>
-                  <p className="muted" style={{ margin: '4px 0' }}>{item.specs}</p>
-                  <div className="price-sm">{formatVND(item.price)} / cái</div>
-                </div>
-
-                <div className="cart-qty-controls">
-                  <div className="qty-box">
-                    <button type="button" onClick={() => onUpdateQty(item.id, item.qty - 1)}>
-                      −
-                    </button>
-                    <span>{item.qty}</span>
-                    <button type="button" onClick={() => onUpdateQty(item.id, item.qty + 1)}>
-                      +
-                    </button>
+                  <div className="qty">
+                    <button type="button" onClick={() => onUpdateQty(i.id, i.qty - 1)} aria-label="Giảm">−</button>
+                    <span>{i.qty}</span>
+                    <button type="button" onClick={() => onUpdateQty(i.id, i.qty + 1)} aria-label="Tăng">+</button>
                   </div>
-                  <strong className="price">{formatVND(item.price * item.qty)}</strong>
-                  <button
-                    type="button"
-                    className="danger-outline"
-                    onClick={() => onRemoveItem(item.id)}
-                  >
-                    Xóa
-                  </button>
                 </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Cột phải: Thanh toán đơn linh kiện rời */}
-      <div className="card sticky-panel">
-        <h2>Thanh toán đơn linh kiện</h2>
-        <p className="muted">Áp dụng cho khách mua lẻ linh kiện tự lắp hoặc nâng cấp máy.</p>
-
-        <div className="deposit-summary-box">
-          <div className="summary-row">
-            <span>Tổng số lượng:</span>
-            <strong>{totalItems} linh kiện</strong>
-          </div>
-          <div className="summary-row">
-            <span>Phí vận chuyển:</span>
-            <strong style={{ color: '#059669' }}>Miễn phí toàn quốc</strong>
-          </div>
-          <div className="divider" style={{ margin: '12px 0' }} />
-          <div className="summary-row">
-            <span>Tổng tiền thanh toán:</span>
-            <strong className="total-price">{formatVND(totalPrice)}</strong>
-          </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="cart-price">{formatVND(i.price * i.qty)}</div>
+                <button type="button" className="link-btn" style={{ fontSize: 13 }} onClick={() => onRemoveItem(i.id)}>Xóa</button>
+              </div>
+            </div>
+          ))}
         </div>
 
-        <form onSubmit={handleCheckout} className="form">
-          <label className="field-group">
-            <span>Địa chỉ giao hàng</span>
-            {addresses.length > 0 ? (
-              <select
-                value={selectedAddressId}
-                onChange={(e) => setSelectedAddressId(e.target.value)}
-              >
-                {addresses.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.recipientName} ({a.phoneNumber}) - {[a.street, a.ward, a.district, a.province].filter(Boolean).join(', ')}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div style={{ marginTop: '6px' }}>
-                <button type="button" onClick={onGoToAddresses}>
-                  + Thêm địa chỉ nhận hàng
-                </button>
-              </div>
-            )}
-          </label>
-
-          <label className="field-group">
-            <span>Phương thức thanh toán</span>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-              <option value="COD">Thanh toán khi nhận hàng (COD)</option>
-              <option value="BANK">Chuyển khoản Ngân hàng (QR Code)</option>
-              <option value="VNPAY">Cổng thanh toán VNPay / ZaloPay</option>
-            </select>
-          </label>
-
-          <button type="submit" className="primary" disabled={cart.length === 0}>
-            Xác nhận đặt mua linh kiện ({formatVND(totalPrice)})
-          </button>
-        </form>
+        <div className="card">
+          <div className="card-head"><h2>Địa chỉ nhận hàng</h2>
+            <button className="btn btn-ghost btn-sm" onClick={onGoToAddresses}>Quản lý địa chỉ</button>
+          </div>
+          {addresses === null && <p className="muted">Đang tải địa chỉ…</p>}
+          {addresses && addresses.length === 0 && (
+            <p className="muted">Bạn chưa có địa chỉ nào. <button type="button" className="link-btn" onClick={onGoToAddresses}>Thêm địa chỉ</button> để đặt hàng.</p>
+          )}
+          {addresses?.map((a) => (
+            <label key={a.id} className={`addr-pick ${addrId === a.id ? 'on' : ''}`}>
+              <input type="radio" name="addr" checked={addrId === a.id} onChange={() => setAddrId(a.id)} />
+              <span>
+                <b>{a.recipientName}</b> · {a.phoneNumber} {a.defaultAddress && <span className="badge b-red">Mặc định</span>}
+                <br />{a.street}, {a.ward}, {a.district}, {a.province}
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
+
+      <aside className="card summary">
+        <h3>Thanh toán</h3>
+        <div className="coupon">
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Mã giảm giá (thử CS10)" aria-label="Mã giảm giá" />
+          <button className="btn btn-outline" onClick={applyCoupon}>Áp dụng</button>
+        </div>
+        <div className="sum-row"><span>Tạm tính</span><span>{formatVND(subtotal)}</span></div>
+        {discount > 0 && <div className="sum-row disc"><span>Giảm giá</span><span>−{formatVND(discount)}</span></div>}
+        <div className="sum-row"><span>Phí vận chuyển</span><span>{shipping === 0 ? 'Miễn phí' : formatVND(shipping)}</span></div>
+        <div className="sum-total"><span>Tổng cộng</span><strong>{formatVND(total)}</strong></div>
+        <small className="muted">Đã bao gồm VAT 10%. Miễn phí vận chuyển cho đơn từ 2.000.000đ.</small>
+
+        <div className="step-title">Phương thức thanh toán</div>
+        {PAYMENTS.map(([k, label]) => (
+          <label key={k} className={`pay-option ${pay === k ? 'on' : ''}`}>
+            <input type="radio" name="pay" checked={pay === k} onChange={() => setPay(k)} /> {label}
+          </label>
+        ))}
+        <button className="btn btn-primary btn-block btn-lg" style={{ marginTop: 8 }} onClick={checkout}>Đặt hàng</button>
+      </aside>
     </div>
   );
 }

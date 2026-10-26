@@ -1,109 +1,121 @@
 import React, { useEffect, useState } from 'react';
-import { api, post, put } from '../api';
-import { Field, Form, Submit } from '../components/UI';
+import { get, post, put } from '../api';
+import { Field, Spinner } from '../components/ui';
+import { ROLE_LABELS, formatDate, formatDateTime, initials, passwordProblem } from '../utils';
 
-export default function ProfilePage({ go, busy }) {
-  const [profile, setProfile] = useState(null);
+export default function ProfilePage({ go, busy, onProfileUpdated, onLogout }) {
+  const [me, setMe] = useState(null);
+  const [loadErr, setLoadErr] = useState('');
+  const [form, setForm] = useState({ fullName: '', gender: '', dateOfBirth: '', avatarUrl: '' });
+  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [pwErr, setPwErr] = useState('');
 
-  async function loadProfile() {
-    const d = await api('/api/me');
-    setProfile(d);
-    return d;
-  }
+  const fill = (u) => {
+    setMe(u);
+    setForm({ fullName: u.fullName || '', gender: u.gender || '', dateOfBirth: u.dateOfBirth || '', avatarUrl: u.avatarUrl || '' });
+  };
 
   useEffect(() => {
-    go(loadProfile);
+    get('/api/me').then(fill).catch((e) => setLoadErr(e.message));
   }, []);
 
-  const handleUpdateProfile = async (e) => {
+  async function save(e) {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.currentTarget));
-    await go(async () => {
-      const d = await put('/api/me', {
-        fullName: f.fullName,
-        gender: f.gender || null,
-        dateOfBirth: f.dateOfBirth || null,
-        avatarUrl: f.avatarUrl || null,
-      });
-      setProfile(d);
-      return d;
-    });
-  };
+    const d = await go(() =>
+      put('/api/me', {
+        fullName: form.fullName.trim(),
+        gender: form.gender || null,
+        dateOfBirth: form.dateOfBirth || null,
+        avatarUrl: form.avatarUrl.trim() || null,
+      })
+    );
+    if (d?.id) { fill(d); onProfileUpdated(d); }
+  }
 
-  const handleChangePassword = async (e) => {
+  async function changePassword(e) {
     e.preventDefault();
-    const form = e.currentTarget;
-    const f = Object.fromEntries(new FormData(form));
-    await go(() => post('/api/me/change-password', f));
-    form.reset();
-  };
+    setPwErr('');
+    const problem = passwordProblem(pw.newPassword);
+    if (problem) return setPwErr(problem);
+    if (pw.newPassword !== pw.confirm) return setPwErr('Mật khẩu nhập lại không khớp.');
+    const d = await go(() => post('/api/me/change-password', { currentPassword: pw.currentPassword, newPassword: pw.newPassword }));
+    if (d) {
+      window.alert('Đổi mật khẩu thành công. Vì lý do bảo mật, bạn cần đăng nhập lại.');
+      onLogout();
+    }
+  }
+
+  if (loadErr) return <div className="error">{loadErr}</div>;
+  if (!me) return <div className="card"><Spinner /></div>;
 
   return (
-    <div className="layout">
-      <div className="card">
-        <div className="profile-header">
-          <div className="avatar-circle">
-            {profile?.avatarUrl ? (
-              <img src={profile.avatarUrl} alt="Avatar" />
-            ) : (
-              <span>{(profile?.fullName || 'CS').charAt(0).toUpperCase()}</span>
-            )}
-          </div>
-          <div>
-            <h2>{profile?.fullName || 'Thành viên Computer Store'}</h2>
-            <p className="muted">
-              {profile?.email || profile?.phoneNumber || 'Tài khoản mua sắm linh kiện & bảo hành điện tử'}
-            </p>
-          </div>
+    <div className="profile-layout">
+      <aside className="card profile-side">
+        <div className="avatar">
+          {me.avatarUrl ? <img src={me.avatarUrl} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : initials(me.fullName)}
         </div>
+        <h2>{me.fullName}</h2>
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <span className="badge b-red">{ROLE_LABELS[me.roleCode] || me.roleName}</span>
+          <span className={`badge ${me.verified ? 'b-green' : 'b-amber'}`}>{me.verified ? 'Đã xác thực' : 'Chưa xác thực'}</span>
+        </div>
+        <div className="kv">
+          <div><span>Email</span><b>{me.email || '—'}</b></div>
+          <div><span>Điện thoại</span><b>{me.phoneNumber || '—'}</b></div>
+          <div><span>Tham gia</span><b>{formatDate(me.createdAt)}</b></div>
+          <div><span>Đăng nhập gần nhất</span><b>{formatDateTime(me.lastLoginAt)}</b></div>
+        </div>
+      </aside>
 
-        <div className="divider" />
+      <div>
+        <form className="card" onSubmit={save}>
+          <div className="card-head"><h2>Thông tin cá nhân</h2></div>
+          <Field label="Họ và tên">
+            <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} minLength={2} maxLength={150} required />
+          </Field>
+          <div className="grid-2">
+            <Field label="Giới tính">
+              <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                <option value="">Không muốn nêu</option>
+                <option value="MALE">Nam</option>
+                <option value="FEMALE">Nữ</option>
+                <option value="OTHER">Khác</option>
+              </select>
+            </Field>
+            <Field label="Ngày sinh">
+              <input type="date" value={form.dateOfBirth} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} />
+            </Field>
+          </div>
+          <Field label="Ảnh đại diện (đường dẫn)" hint="Dán link ảnh, ví dụ https://…/anh.jpg">
+            <input value={form.avatarUrl} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} maxLength={255} />
+          </Field>
+          <div className="grid-2">
+            <Field label="Email" hint="Liên hệ cửa hàng nếu cần đổi email.">
+              <input value={me.email || ''} disabled />
+            </Field>
+            <Field label="Số điện thoại">
+              <input value={me.phoneNumber || ''} disabled />
+            </Field>
+          </div>
+          <button className="btn btn-primary" disabled={busy}>Lưu thay đổi</button>
+        </form>
 
-        <Form
-          key={profile?.id || 'profile-form'}
-          title="Thông tin cá nhân"
-          subtitle="Cập nhật thông tin để nhận thông báo bảo hành và ưu đãi thành viên."
-          onSubmit={handleUpdateProfile}
-          busy={busy}
-        >
-          <Field name="fullName" label="Họ và tên" defaultValue={profile?.fullName || ''} required />
-          <label className="field-group">
-            <span>Giới tính</span>
-            <select name="gender" defaultValue={profile?.gender || ''}>
-              <option value="">Chưa chọn</option>
-              <option value="MALE">Nam</option>
-              <option value="FEMALE">Nữ</option>
-              <option value="OTHER">Khác</option>
-            </select>
-          </label>
-          <Field name="dateOfBirth" label="Ngày sinh" type="date" defaultValue={profile?.dateOfBirth || ''} />
-          <Field
-            name="avatarUrl"
-            label="Đường dẫn ảnh đại diện (Avatar URL)"
-            placeholder="https://example.com/avatar.png"
-            defaultValue={profile?.avatarUrl || ''}
-          />
-          <Submit disabled={busy}>Lưu thay đổi</Submit>
-        </Form>
-      </div>
-
-      <div className="card">
-        <Form
-          title="Bảo mật & Đổi mật khẩu"
-          subtitle="Nên sử dụng mật khẩu mạnh để bảo vệ lịch sử mua hàng của bạn."
-          onSubmit={handleChangePassword}
-          busy={busy}
-        >
-          <Field name="currentPassword" label="Mật khẩu hiện tại" type="password" required />
-          <Field
-            name="newPassword"
-            label="Mật khẩu mới (tối thiểu 8 ký tự)"
-            type="password"
-            minLength="8"
-            required
-          />
-          <Submit disabled={busy}>Cập nhật mật khẩu</Submit>
-        </Form>
+        <form className="card" onSubmit={changePassword}>
+          <div className="card-head"><h2>Đổi mật khẩu</h2><small>Bạn sẽ được đăng xuất khỏi mọi thiết bị.</small></div>
+          {pwErr && <div className="error">{pwErr}</div>}
+          <Field label="Mật khẩu hiện tại">
+            <input type="password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} autoComplete="current-password" required />
+          </Field>
+          <div className="grid-2">
+            <Field label="Mật khẩu mới" hint="Ít nhất 8 ký tự, gồm cả chữ và số.">
+              <input type="password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} autoComplete="new-password" required />
+            </Field>
+            <Field label="Nhập lại mật khẩu mới">
+              <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" required />
+            </Field>
+          </div>
+          <button className="btn btn-outline" disabled={busy}>Đổi mật khẩu</button>
+        </form>
       </div>
     </div>
   );
