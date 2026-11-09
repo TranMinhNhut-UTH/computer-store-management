@@ -171,24 +171,43 @@ Các hướng có thể xem xét cho phiên bản sau:
 
 - Backend: Java 21 + Spring Boot
 - Frontend: React + TypeScript
-- Database: Microsoft SQL Server
-- ORM dự kiến: Spring Data JPA / Hibernate
+- Database: MySQL 8
+- ORM: Spring Data JPA / Hibernate
 - Giao tiếp frontend–backend: REST API, dữ liệu JSON
 - Version Control: Git / GitHub
 
 ### 9.2. Trạng thái triển khai hiện tại
 
-Backend đã được khởi tạo bằng Spring Boot (xem `backend/pom.xml`). Các dependency hiện có:
+Backend đã được khởi tạo bằng Spring Boot 3.3.5 (xem `backend/pom.xml`) và hiện
+đang compile với Java 17. Định hướng Java 21 ở mục 9.1 chưa khớp với cấu hình
+compiler thực tế; cần được xác nhận và cập nhật riêng trước khi coi Java 21 là
+phiên bản đã triển khai.
 
-- `spring-boot-starter-webmvc` — Web / REST API
+Các dependency backend hiện có:
+
+- `spring-boot-starter-web` — Web / REST API
+- `spring-boot-starter-data-jpa` — Spring Data JPA và Hibernate ORM
+- `spring-boot-starter-security` — Authentication / authorization
 - `spring-boot-starter-validation` — Validation
+- `mysql-connector-j` — MySQL JDBC driver
+- JJWT (`jjwt-api`, `jjwt-impl`, `jjwt-jackson`) — JWT
+- `springdoc-openapi-starter-webmvc-ui` — OpenAPI/Swagger UI
+- Lombok — hỗ trợ giảm mã lặp trong Java
 
-Các dependency sau **chưa được thêm vào `pom.xml`** và cần bổ sung ở bước triển khai:
+Database script `database_linh_kien_pc.sql` khai báo MySQL 8.0+ với InnoDB,
+`utf8mb4` và `utf8mb4_unicode_ci`. Cấu hình backend trong
+`backend/src/main/resources/application.yml` cũng sử dụng MySQL JDBC và đang
+trỏ tới database `computer_store`; script SQL lại tạo database
+`qlkho_linh_kien_pc`. Tên database cần được nhóm thống nhất trước khi tích hợp.
 
-- Spring Data JPA + Hibernate (ORM)
-- Microsoft SQL Server JDBC Driver
-- Spring Security (authentication / authorization)
-- Công cụ quản lý database migration (ví dụ Flyway) — đề xuất sử dụng, nhưng chưa chốt chính thức
+Frontend hiện sử dụng React 18.3.1 và Vite 5.4.11. Các file mã nguồn hiện tại
+đang dùng JavaScript/JSX (`.js`, `.jsx`), chưa có cấu hình hoặc dependency
+TypeScript trong `frontend/package.json`. Vì vậy React + TypeScript vẫn là định
+hướng công nghệ, chưa phải hiện trạng đã được xác minh trong frontend hiện tại.
+
+Chưa có dependency hoặc cấu hình chính thức cho công cụ database migration như
+Flyway hoặc Liquibase trong các file đã kiểm tra. Việc lựa chọn và áp dụng công cụ
+migration cần được nhóm thống nhất trước khi triển khai.
 
 ### 9.3. Kiến trúc
 

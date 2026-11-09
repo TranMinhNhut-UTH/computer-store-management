@@ -1,5 +1,9 @@
 # Software Requirements
 
+> **Trạng thái:** Requirement chính thức, đã được nhóm thống nhất (V1).
+> **Ngày ghi nhận:** 2026-11-09.
+
+
 ## 1. Mục đích
 
 Tài liệu này mô tả các yêu cầu phần mềm cho hệ thống **Computer Store Management** dựa trên phạm vi V1 đã chốt trong `project-scope.md`.
