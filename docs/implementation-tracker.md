@@ -66,8 +66,8 @@ Các ID FND-008–011 thuộc Inventory Foundation của TV2, được đặt c�
 
 | ID | Chức năng | Owner | Backend status | Frontend status | Tests status | Overall status | Ghi chú/phụ thuộc |
 |---|---|---|---|---|---|---|---|
-| IAM-001 | Authentication | TV1 | TODO | TODO | TODO | TODO | Đăng nhập nhân viên, hash mật khẩu, từ chối tài khoản khóa; session/deployment/bootstrap cần duyệt P01/P02/P04. DEP-002/003. |
-| IAM-002 | Authorization | TV1 | TODO | TODO | TODO | TODO | Backend kiểm tra quyền bốn vai trò; UI theo quyền, kiểm tra 401/403. Không tự cho Admin toàn quyền nghiệp vụ. P03; DEP-002. |
+| IAM-001 | Authentication | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Security Foundation phần 1: Spring Security, session IF_REQUIRED/explicit save, entry point 401 UNAUTHENTICATED qua ApiProblems; tắt form login/Basic/logout mặc định, provider tạm luôn từ chối và ngăn user mặc định. 11 security MVC tests pass; cùng 23 Shared/UTC tests = 34 pass, không DB. Chưa có DB login, Current Actor hoặc frontend; chưa commit/review/merge. CSRF SPA exchange, cookie/session timeout/bootstrap còn P01/P02/P04; DEP-002/003. |
+| IAM-002 | Authorization | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Chỉ GET /api/health public sau khi xác minh nội dung; mọi endpoint khác denyAll, kể cả user giả ADMIN trong test. Handler 403 ACCESS_DENIED dùng ApiProblems, giữ CSRF, không CORS wildcard; tests 401/403/sanitization/CSRF pass trong bộ 11 security tests. Chưa có permission catalog/mapping quyền nghiệp vụ hoặc frontend; chưa commit/review/merge. P03; DEP-002. |
 | IAM-003 | Session/Logout | TV1 | TODO | TODO | TODO | TODO | Flow logout, expiry, revoke khi khóa/đổi quyền theo quyết định P01/P02/P03. Session hiện là PROPOSED. |
 | IAM-004 | Current Actor | TV1 | TODO | N/A | TODO | TODO | Lấy actor từ principal cho nghiệp vụ/audit, không nhận actor do client tự khai. DEP-002/004. |
 | IAM-005 | User Management | TV1 | TODO | TODO | TODO | TODO | Danh sách/tạo/cập nhật/gán vai trò/khóa/mở khóa; giữ tham chiếu lịch sử. Phụ thuộc IAM-001–004/006. |
