@@ -1,6 +1,7 @@
 package com.computerstore.computer_store_backend.identity.security;
 
 import com.computerstore.computer_store_backend.HealthController;
+import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpMethod;
@@ -129,7 +131,8 @@ class SecurityConfigTest {
     }
 
     @Test void noDefaultUserIsCreatedEvenWithBootUserAutoConfiguration() {
-        assertTrue(context.getBeansOfType(UserDetailsService.class).isEmpty());
+        assertEquals(1, context.getBeansOfType(UserDetailsService.class).size());
+        assertInstanceOf(EmployeeUserDetailsService.class, context.getBean(UserDetailsService.class));
         assertEquals(1, context.getBeansOfType(AuthenticationProvider.class).size());
         var provider = context.getBean(AuthenticationProvider.class);
         assertThrows(BadCredentialsException.class, () -> provider.authenticate(
@@ -165,8 +168,13 @@ class SecurityConfigTest {
     @EnableWebMvc
     @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
-            HealthController.class, PrivateFixture.class, UserDetailsServiceAutoConfiguration.class})
-    static class FixtureConfig { }
+            EmployeeUserDetailsService.class, HealthController.class, PrivateFixture.class,
+            UserDetailsServiceAutoConfiguration.class})
+    static class FixtureConfig {
+        @Bean AppUserRepository appUserRepository() {
+            return org.mockito.Mockito.mock(AppUserRepository.class);
+        }
+    }
 
     @RestController
     static class PrivateFixture {
