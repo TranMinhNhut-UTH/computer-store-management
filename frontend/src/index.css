@@ -1,0 +1,69 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #142a34;
+  background: #f3f6f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 280px; }
+
+.workspace {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100svh;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.welcome {
+  width: min(100%, 640px);
+  padding: clamp(28px, 6vw, 56px);
+  border: 1px solid #dce5e1;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 40px #142a3408;
+}
+
+.brand-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 32px;
+  place-items: center;
+  border-radius: 12px;
+  background: #142a34;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+
+.environment-status {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: #426054;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.status-dot {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #32825d;
+}
