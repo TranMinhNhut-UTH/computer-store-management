@@ -2,19 +2,22 @@
 
 ## 1. Tổng quan
 
-Tracker phân chia công việc và ghi nhận trạng thái của hai thành viên, dựa trên [project-scope.md](project-scope.md), [requirements.md](requirements.md), [database-design.md](database-design.md), [backend-conventions.md](backend-conventions.md) và source local được kiểm tra ngày 2026-11-17. Không thay đổi yêu cầu, ownership hoặc phê duyệt phương án kỹ thuật bằng việc ghi vào tracker.
+Tracker phân chia công việc và ghi nhận trạng thái của hai thành viên, dựa trên [project-scope.md](project-scope.md), [requirements.md](requirements.md), [database-design.md](database-design.md), [backend-conventions.md](backend-conventions.md) và source thực tế. Lập ngày 2026-11-17; đồng bộ tiến độ ngày 2026-11-20 theo HEAD `87024de` trên `feature/identity-catalog`, commit history, source/tests và bằng chứng kiểm tra gần nhất. Không thay đổi yêu cầu, ownership hoặc phê duyệt phương án kỹ thuật bằng việc ghi vào tracker.
 
 Phạm vi: modular monolith kết hợp layered architecture, một cửa hàng và một kho; bốn vai trò nhân viên. Không có e-commerce, customer account, multiwarehouse, payment gateway, serial/IMEI hoặc warranty.
 
 Hiện trạng có bằng chứng:
 
-- `backend/pom.xml`: Java 21, Spring Boot 4.1.1, Maven, JPA, Validation, Web MVC, MySQL JDBC và Flyway. Chưa có dependency Spring Security.
+- `backend/pom.xml`: Java 21, Spring Boot 4.1.1, Maven, JPA, Validation, Web MVC, MySQL JDBC, Flyway và Spring Security; `55f489d` thêm security/test starter. Entry point Backend thường giữ nguyên, không tự gọi bootstrap Admin.
 - Migration `backend/src/main/resources/db/migration/V1__create_initial_schema.sql`, 23 Entity và 23 Repository đã có; persistence foundation được ghi nhận DONE tại `80eed8b`. Audit tĩnh 5 bước theo bàn giao; không coi đó là xác minh runtime hiện tại.
-- `application.properties` yêu cầu `DB_URL`, không fallback URL; Hibernate `ddl-auto=validate`. Không kết nối database để kiểm chứng trong lần lập tracker.
+- `application.properties` yêu cầu `DB_URL`, không fallback URL; Hibernate `ddl-auto=validate`. Không kết nối DB hoặc chạy migration/ứng dụng trong lần đồng bộ tài liệu này.
 - Tài liệu conventions đã có ở `84eb5ec`; các lựa chọn PROPOSED/PENDING vẫn chưa được duyệt hết.
-- Bốn file UTC tồn tại, chưa được Git theo dõi. Báo cáo có sẵn trong `backend/target/surefire-reports/` ghi TimeConfigTest: 1 test và UtcTimeProviderTest: 4 tests, không failure/error/skipped. Đây là kết quả đã lưu, không phải lần chạy mới.
-- Backend có health controller và persistence; chưa thấy Service, DTO, API nghiệp vụ hoặc security flow. Entity/Repository không đồng nghĩa chức năng đã hoàn thành.
-- Frontend theo bối cảnh là React + Vite, JavaScript/JSX; hiện `frontend/src` chưa có file, không có `frontend/package.json`, chưa có bằng chứng chức năng frontend đã triển khai.
+- UTC Clock/Time Provider đã commit/push tại `e956801`; Shared API Error/ProblemDetail/Validation tại `6266925`. Đã có helper/service, handler và isolated tests; chi tiết ở FND-003–006. Không còn là source untracked.
+- Security Filter Foundation `55f489d`, Employee Authentication `d219acf`, Session Login/Logout `8d1d8fe` đã push. Có API auth và DTO thật, CSRF/session flow và Login UI tích hợp; chưa có API nghiệp vụ. Permission mapping/Authorization Part 3 chưa triển khai; ngoài các route health/auth được cấu hình, API nghiệp vụ hiện `denyAll`.
+- Manual Admin Bootstrap đã push tại `d6335b4`: CLI riêng, explicit opt-in, BCrypt hiện có, kiểm tra local target `computer_store_dev`, role ADMIN seeded và transaction user/link. Người dùng xác nhận bootstrap ADMIN local và Login E2E thành công; đây là bằng chứng vận hành do người dùng cung cấp, không phải lần thực thi của nhiệm vụ tài liệu này. Không ghi thông tin đăng nhập hoặc secret vào tracker.
+- Frontend hiện có React 19/Vite 8, JavaScript/JSX: foundation `e6268d2`, Login UI/Light-Dark foundation `4814696`, authenticated App Shell/shared UI `9be55fa`, Responsive Navigation `87024de`; tất cả đã push. Menu V1 vẫn là coming-soon, không có màn hình hoặc dữ liệu nghiệp vụ giả.
+- Kết quả gần nhất: backend isolated **90/90 PASS**, frontend **24/24 PASS**, frontend build **PASS**; không chạy lại tests cho thay đổi Markdown này. Chrome headless đã kiểm tra responsive/navigation 320–1440px với API giả lập; browser/accessibility QA đầy đủ còn pending. Tests mock/standalone không chứng minh rollback/locking vật lý trên MySQL.
+- Foundation đã tích hợp ở phạm vi local auth/UI; **chưa merge main** (`main` tại `6e40d69`), PR tích hợp chưa được tạo. Chưa hoàn thành permission mapping, Authorization Part 3, business modules hoặc toàn bộ browser/accessibility QA; không suy ra DONE từ commit/push hoặc tests PASS.
 
 Ưu tiên source/cấu hình thực tế cho hiện trạng stack; các mô tả cũ trong tài liệu về Java 17, Boot 3.3.5, TypeScript hoặc chưa có Flyway không được dùng làm trạng thái triển khai. Không sửa các tài liệu nguồn trong nhiệm vụ này.
 
@@ -22,10 +25,10 @@ Tracker có **33 đầu việc**: 11 nền tảng và 22 chức năng. Tám depe
 
 ## 2. Danh sách thành viên và ownership
 
-| Thành viên | Ownership |
-|---|---|
-| TV1 — Bạn | Shared Foundation: UTC, API Error Handling, ProblemDetail, Validation/Normalization, API/Pagination. Identity & Security: authentication, authorization, session/logout, current actor, user management, role/permission integration. Catalog: category/product. Partners: supplier/customer. Basic Reports. |
-| TV2 — Đồng đội | Inventory Foundation: Inventory Operations contract, transaction/locking, movement ledger, concurrency/idempotency. Purchasing: Purchase/PurchaseItem, Draft/Confirm, Stock In. Inventory: balance, history, stocktake, adjustment. Sales: SalesOrder/SalesOrderItem, confirm/Stock Out. Payment/Returns: Payment, PaymentRefund, SalesReturn/SalesReturnItem. |
+| Mã thành viên | Họ và tên | Ownership |
+|---|---|---|
+| TV1 | Trần Minh Nhựt | Shared Foundation: UTC, API Error Handling, ProblemDetail, Validation/Normalization, API/Pagination. Identity & Security: authentication, authorization, session/logout, current actor, user management, role/permission integration. Catalog: category/product. Partners: supplier/customer. Basic Reports. |
+| TV2 | Nguyễn Phạm Gia Huy | Inventory Foundation: Inventory Operations contract, transaction/locking, movement ledger, concurrency/idempotency. Purchasing: Purchase/PurchaseItem, Draft/Confirm, Stock In. Inventory: balance, history, stocktake, adjustment. Sales: SalesOrder/SalesOrderItem, confirm/Stock Out. Payment/Returns: Payment, PaymentRefund, SalesReturn/SalesReturnItem. |
 
 Mỗi người chịu trách nhiệm Backend, Frontend và Tests của các module được giao. Người cung cấp contract và người tích hợp phối hợp theo mục 6; phối hợp không chuyển ownership. Hai dòng nền tảng đã hoàn thành dưới đây là thành quả có trước tracker; ghi “Đã có” để không suy đoán tác giả hay giao lại công việc đã xong.
 
@@ -44,16 +47,23 @@ Backend, Frontend, Tests được cập nhật riêng; Overall không tự suy r
 
 Với nền tảng thuần backend, Frontend là N/A. Với tài liệu hoặc phạm vi lịch sử không có frontend/test tự động trong bàn giao, ghi N/A và giải thích; không suy ra đã chạy test. Trạng thái PROPOSED/PENDING là trạng thái quyết định trong conventions, không thay thế trạng thái công việc.
 
+Nhãn bằng chứng trong ghi chú, không thay thế trạng thái các cột:
+
+- **IMPLEMENTED**: source đã triển khai trong phạm vi nêu rõ; commit/push có thể đối chiếu, chưa đồng nghĩa review/merge.
+- **TESTED**: chỉ phần đã có bằng chứng kiểm thử, ghi rõ isolated/mock, browser hoặc xác nhận vận hành của người dùng; không suy rộng sang phần chưa kiểm tra.
+- **INTEGRATED**: các thành phần đã nối với nhau trong phạm vi cụ thể, ví dụ Login UI với session/CSRF API ở local; không có nghĩa các module nghiệp vụ đã tích hợp hoặc quyền đã hoàn tất.
+- **MERGED**: đã merge vào main, cần bằng chứng commit/PR. Foundation bổ sung ở feature hiện chưa MERGED; không tạo trạng thái DONE mới trong lần đồng bộ này.
+
 ## 4. Shared Foundation Tracker
 
 | ID | Chức năng | Owner | Backend status | Frontend status | Tests status | Overall status | Ghi chú/phụ thuộc |
 |---|---|---|---|---|---|---|---|
 | FND-001 | Persistence Foundation | Đã có; không giao lại | DONE | N/A | N/A | DONE | `80eed8b`: migration V1, 23 Entity, 23 Repository, datasource yêu cầu DB_URL; audit tĩnh theo bàn giao. Tests N/A trong phạm vi bàn giao nền tảng này, không khẳng định integration tests/runtime đã pass. |
 | FND-002 | Backend Conventions — tài liệu | Đã có; không giao lại | N/A | N/A | N/A | DONE | `84eb5ec`; DONE chỉ cho tài liệu, không cho implementation hoặc phê duyệt PROPOSED/PENDING. |
-| FND-003 | UTC Clock/Time Helper | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | Có TimeConfig.java, UtcTimeProvider.java và hai test class trong shared/time. Clock.systemUTC(); now() trả LocalDateTime UTC, truncate microsecond. Báo cáo sẵn có: 5 tests pass; chưa commit/review/merge. DEP-004; P06 còn PENDING. |
-| FND-004 | API Error Handling | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Shared API Foundation phần 1 theo quyết định task: BusinessException, ErrorCode, GlobalExceptionHandler; 400/404/409/500, lỗi 500 sanitized. Bộ tests chọn lọc chung FND-004–006: 18 pass, không DB; chưa commit/review/merge. Security chưa triển khai; DEP-002/003. |
-| FND-005 | ProblemDetail contract và response | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | 2026-11-18: ApiProblems và FieldErrorDetail; application/problem+json, code, fieldErrors ổn định, instance không chứa query; standalone MockMvc tests pass trong bộ 18 tests. Task chấp thuận contract phần 1; chưa review/merge, chưa tích hợp Security/frontend. DEP-003; phần P05 khác giữ nguyên. |
-| FND-006 | Validation/Normalization | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | 2026-11-18: IdentifierNormalizer username/businessCode/userEmail theo database-design mục 1.2; ASCII edge whitespace SP/HT/LF/VT/FF/CR, không Unicode trim. Giữ null/empty riêng; requiredness và cú pháp email @Email thuộc request, không đổi blank email thành null, không kiểm tra UNIQUE. Tests pass trong bộ 18 tests; chưa review/merge. P11 empty/null/PATCH và validation từng request còn mở; DEP-003. |
+| FND-003 | UTC Clock/Time Helper | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `e956801`: TimeConfig, UtcTimeProvider và hai test class; Clock.systemUTC(), LocalDateTime UTC truncate microsecond. TESTED: 5 UTC tests trong bộ 90 backend PASS gần nhất. Helper đã dùng trong CLI bootstrap; chưa nghiệm thu UTC cho mọi nghiệp vụ. Chưa merge main; DEP-004 và P06 còn phần cần xác nhận. Giữ IN_PROGRESS. |
+| FND-004 | API Error Handling | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `6266925`: BusinessException, ErrorCode, GlobalExceptionHandler; 400/404/409/500 và lỗi 500 sanitized. Helpers đã được dùng bởi Security/auth (`55f489d`, `8d1d8fe`). TESTED trong bộ 18 shared tests và regression security của tổng 90 backend PASS; frontend auth xử lý lỗi chung. Chưa tích hợp API nghiệp vụ hoặc merge main; DEP-002/003 còn mở. |
+| FND-005 | ProblemDetail contract và response | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `6266925`: ApiProblems, FieldErrorDetail; application/problem+json, code, fieldErrors cho validation, instance không chứa query. INTEGRATED ở Security/auth response; frontend auth dùng contract lỗi trong phạm vi Login/Session. TESTED trong bộ 18 shared tests, HTTP-flow và frontend mock tests gần nhất. Chưa hoàn tất shared DTO/pagination, các quyết định P05 hoặc tích hợp hai phía cho mọi module; DEP-003, chưa merge main. |
+| FND-006 | Validation/Normalization | TV1 | IN_PROGRESS | N/A | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `6266925`: IdentifierNormalizer cho username/businessCode/userEmail theo database-design mục 1.2; trim ASCII SP/HT/LF/VT/FF/CR, không Unicode trim; giữ null/empty riêng, không kiểm tra UNIQUE. Username normalization đã dùng ở authentication và bootstrap Admin; tests thuộc bộ 18 shared tests trong tổng 90 backend PASS. P11 empty/null/PATCH, validation từng request và DEP-003 còn mở; chưa merge main. |
 | FND-007 | API/DTO/Pagination conventions và thành phần dùng chung | TV1 | TODO | N/A | TODO | TODO | DTO độc lập Entity; decimal-string, route, pagination limits, OSIV/package còn đề xuất. DEP-003; P05/P10/P11. |
 | FND-008 | Inventory Operations contract | TV2 | TODO | N/A | TODO | TODO | Chốt đầu vào/đầu ra, actor/time, lỗi, transaction owner, row lifecycle; không có CRUD sửa tồn tự do. DEP-001/005/006/007; P08/P10. |
 | FND-009 | Transaction/locking | TV2 | TODO | N/A | TODO | TODO | Atomic document + balance + movement; thứ tự khóa theo design và chi tiết liên module cần duyệt. Kiểm tra rollback/thiếu tồn/stocktake race. P08. |
@@ -66,9 +76,9 @@ Các ID FND-008–011 thuộc Inventory Foundation của TV2, được đặt c�
 
 | ID | Chức năng | Owner | Backend status | Frontend status | Tests status | Overall status | Ghi chú/phụ thuộc |
 |---|---|---|---|---|---|---|---|
-| IAM-001 | Authentication | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Part 2A đã commit d219acf. Part 2B local: POST /api/v1/auth/login dùng provider 2A qua ProviderManager; GET /me lấy EmployeePrincipal từ authenticated context. DTO chỉ userId decimal string và username, không Entity/hash/session ID/roles. Validation và lỗi JSON 400, credentials sai/disabled 401 chung, lỗi hạ tầng 500 sanitized. 15 HTTP-flow tests mới + 45 regression tests = 60 pass, mocks/không DB. Chưa review/merge/commit Part 2B; chưa frontend, bootstrap Admin hoặc thu hồi session cũ khi khóa tài khoản. P01/P02/P03/P04 còn phần liên quan; DEP-002/003. Bổ sung 2026-11-20: bootstrap Admin đã có implementation CLI local riêng, mặc định không thực thi, explicit --bootstrap-admin + console + xác nhận computer_store_dev; bắt buộc nhập full_name, BCrypt từ factory hiện có, role ADMIN seeded, khóa role + transaction user/link, không cấp permission hoặc sửa account cũ. 30 isolated bootstrap tests + 60 regression tests PASS; docs/local-admin-bootstrap.md. Chưa chạy bootstrap/MySQL, chưa kiểm chứng khóa/rollback vật lý hoặc login account thực; chưa commit/review/merge phần bootstrap, giữ IN_PROGRESS. |
-| IAM-002 | Authorization | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Part 2B chỉ public GET /api/health, GET /api/v1/auth/csrf, POST /api/v1/auth/login; GET /api/v1/auth/me và POST /api/v1/auth/logout yêu cầu authenticated. Các route/method khác denyAll; CSRF vẫn bảo vệ login/logout, không CORS wildcard. Chưa cấp authorities hoặc triển khai permission catalog/Authorization Part 3; tests 401/403 và business API denied pass trong bộ 60 tests. Part 2B chưa commit/review/merge. P03; DEP-002. |
-| IAM-003 | Session/Logout | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | 2026-11-18: Part 2B local: SecurityContextRepository explicit save; login gọi ChangeSessionIdAuthenticationStrategy và CsrfAuthenticationStrategy. GET /api/v1/auth/csrf trả headerName/token XOR-masked từ HttpSessionCsrfTokenRepository, deferred load được materialize khi đọc token; SPA gửi token nguyên dạng qua header kèm session cookie và lấy token mới sau login/logout. POST logout trả 204, CsrfLogoutHandler + SecurityContextLogoutHandler hủy session/clear context và xóa cookie session theo tên cấu hình (mặc định JSESSIONID). Tests token cũ bị từ chối, session fixation, me sau logout 401 pass; tổng 60 tests pass không DB. Chưa commit/review/merge; production cookie/domain/path, timeout, topology/CORS và revoke phiên khi khóa/đổi quyền vẫn P01/P02/P03. |
+| IAM-001 | Authentication | TV1 | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed: Security Filter `55f489d`, Employee Authentication `d219acf`, Session Auth API `8d1d8fe`; BCrypt, detached principal, POST login và GET me, DTO userId decimal string/username không Entity/hash/session ID/roles. Login UI/client `4814696` nối session/CSRF API; App Shell chỉ render sau me xác nhận user. Admin Bootstrap `d6335b4` là CLI manual opt-in, target computer_store_dev, role ADMIN hiện có và transaction user/link; không tạo permission hoặc sửa account cũ. TESTED: tổng 90 backend isolated và 24 frontend tests PASS gần nhất; người dùng xác nhận bootstrap ADMIN local và Login E2E thành công. INTEGRATED: auth/UI ở local; không khẳng định toàn bộ QA hoặc nghiệp vụ. Thu hồi session khi khóa account và P01/P02/P03/P04 còn phần cần hoàn thiện; DEP-002/003, chưa PR/review/merge main, giữ IN_PROGRESS. |
+| IAM-002 | Authorization | TV1 | IN_PROGRESS | TODO | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `55f489d`, `8d1d8fe`: Security Filter Foundation; public GET health/csrf và POST login, me/logout yêu cầu authenticated, các route/method nghiệp vụ khác denyAll; CSRF vẫn bật, không CORS wildcard. TESTED: 401/403, CSRF và business API denied trong bộ 90 backend PASS gần nhất. Authorization Part 3: NOT_STARTED; permission catalog/mapping P03: PENDING, authorities hiện chưa cấp, frontend phân quyền chưa triển khai. ADMIN đăng nhập không đồng nghĩa toàn quyền. IAM-002 vẫn IN_PROGRESS cho phần foundation đã có; IAM-006 TODO, DEP-002 còn mở; chưa merge main. |
+| IAM-003 | Session/Logout | TV1 | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IMPLEMENTED/pushed `8d1d8fe`: explicit save SecurityContextRepository, đổi session ID khi login, CSRF XOR-masked headerName/token, refresh token sau login/logout; POST logout hủy session/clear context và cookie theo cấu hình. Frontend client/Login UI `4814696` tích hợp credentials same-origin, restore me và logout với token mới; `9be55fa`/`87024de` giữ auth/logout trong App Shell. TESTED: backend standalone và frontend mock tests trong bộ 90/24 PASS gần nhất; Login E2E local được người dùng xác nhận. Production cookie/domain/path, timeout, topology/CORS, revoke phiên khi khóa/đổi quyền và QA đầy đủ vẫn chưa nghiệm thu; P01/P02/P03 còn mở, chưa merge main. |
 | IAM-004 | Current Actor | TV1 | TODO | N/A | TODO | TODO | Lấy actor từ principal cho nghiệp vụ/audit, không nhận actor do client tự khai. DEP-002/004. |
 | IAM-005 | User Management | TV1 | TODO | TODO | TODO | TODO | Danh sách/tạo/cập nhật/gán vai trò/khóa/mở khóa; giữ tham chiếu lịch sử. Phụ thuộc IAM-001–004/006. |
 | IAM-006 | Role/Permission integration | TV1 | TODO | TODO | TODO | TODO | Catalog/mapping quyền chi tiết và cách đồng bộ quyền trong phiên chưa duyệt; UI tích hợp quyền trong phạm vi quản trị V1, không mở rộng scope. P03. |
@@ -88,6 +98,19 @@ Các ID FND-008–011 thuộc Inventory Foundation của TV2, được đặt c�
 | PAY-002 | PaymentRefund | TV2 | TODO | TODO | TODO | TODO | Liên kết payment gốc, không vượt số đã thu; phối hợp cancel/return atomic, không xóa lịch sử. FND-009/011; DEP-007/008. |
 | RET-001 | SalesReturn/SalesReturnItem | TV2 | TODO | TODO | TODO | TODO | Đơn COMPLETED đã trả đủ, 7 ngày lịch; số trả lũy kế không vượt bán; chỉ restock phần bán lại được, refund khớp return. P07; DEP-007/008. |
 | RPT-001 | Basic Reports | TV1 | TODO | TODO | TODO | TODO | Doanh thu thuần, số bán/trả, tồn hiện tại/tồn thấp và lịch sử nhập-xuất theo design. Không lợi nhuận; không trừ cash refund lần nữa. DEP-008 và INV-001/002; P07. |
+
+### Shared Frontend Foundation — milestone ngoài bảng task
+
+Các mốc dưới đây thuộc phần nền tảng dùng chung của TV1, không tạo task ID mới hoặc chuyển module của TV2. Liên hệ Authentication/Session với IAM-001/003; không dùng milestone UI để đánh dấu hoàn tất chức năng nghiệp vụ.
+
+| Mốc | Owner | Bằng chứng IMPLEMENTED/pushed | TESTED / INTEGRATED và phần còn lại |
+|---|---|---|---|
+| React/Vite Foundation | TV1 | `e6268d2`: React 19/Vite 8, JavaScript/JSX, dev/build scripts, proxy /api tới Backend local. | Frontend build PASS gần nhất; node_modules/dist được ignore. Đây là môi trường và bộ khung, chưa có màn hình nghiệp vụ. |
+| Login UI và auth client | TV1 | `4814696`: Login UI, API client/session/CSRF, loading/error và logout; Backend `8d1d8fe`. | INTEGRATED local với Auth API; bootstrap ADMIN và Login E2E thành công theo xác nhận người dùng. Tests client/UI thuộc tổng 24 PASS; không lưu auth secrets trong browser storage. IAM-001/003 Frontend IN_PROGRESS, QA chưa đầy đủ. |
+| Light/Dark Design System và shared UI | TV1 | `4814696`, `9be55fa`: semantic tokens, ThemeProvider/Toggle, Button/Input/Card/Badge/PageHeader/EmptyState/LoadingState. | Theme/shared-component tests nằm trong bộ 24 PASS; CSS tokens dùng chung. Chưa hoàn tất browser/accessibility QA; không phải triển khai module của TV2. |
+| Authenticated App Shell và Responsive Navigation | TV1 | `9be55fa`, `87024de`: App Shell sau me, desktop sidebar 256/72px, tablet mặc định collapsed, mobile drawer/overlay; chỉ một navigation. | TESTED Chrome headless 320–1440px với API giả lập: focus/Tab/Escape/Close/backdrop, resize, theme, CSRF logout; tests frontend và build PASS. Menu V1 vẫn coming-soon. Thiết bị cảm ứng thật, screen reader, zoom 200% và trình duyệt khác còn pending. |
+
+Tất cả mốc trên chưa MERGED vào main; PR Foundation chưa được tạo. Business screens, Authorization Part 3 và permission mapping không được suy ra là hoàn thành từ App Shell hoặc Login E2E.
 
 ## 6. Dependencies
 
@@ -136,7 +159,10 @@ FND-001/002 giữ DONE theo commit và phạm vi lịch sử được bàn giao,
 
 ## 9. Lịch sử cập nhật
 
+Các dòng lịch sử giữ bằng chứng tại thời điểm ghi. Mô tả cũ như “chưa commit/push” hoặc “chưa chạy bootstrap” không thay thế hiện trạng đã đồng bộ ở mục 1, 4 và 5.
+
 | Ngày cập nhật | ID/phạm vi | Nội dung | Bằng chứng |
 |---|---|---|---|
 | 2026-11-17 | Khởi tạo tracker; FND-001–011 và toàn bộ module/dependency | Tiếp nhận bối cảnh; ghi 33 đầu việc theo ownership hai thành viên. Persistence và tài liệu conventions giữ DONE theo phạm vi bàn giao; UTC IN_PROGRESS; các chức năng còn lại TODO. Đây là ngày lập tracker, không phải ngày hoàn thành các việc trước đó. | Bốn tài liệu nguồn; source/config local; `git log` có `80eed8b`, `84eb5ec`; bốn file UTC untracked và báo cáo Surefire có sẵn ghi 5 tests pass. Không chạy lại tests hay truy cập DB. |
 | 2026-11-20 | IAM-001 — local first-Admin bootstrap | Thêm CLI thủ công, validation local target/credentials, transaction và role lock; tài liệu vận hành. Giữ owner và mọi trạng thái; không đánh dấu DONE. | 30 bootstrap isolated tests + 60 regression tests PASS (90/90), mocks/không DB; chưa chạy CLI với MySQL, chưa commit/push phần bootstrap. |
+| 2026-11-20 | Đồng bộ Foundation; FND-003–006, IAM-001–003 và milestone Frontend | Chuẩn hóa TV1 — Trần Minh Nhựt, TV2 — Nguyễn Phạm Gia Huy; cập nhật ghi chú code đã push. Chỉ IAM-001/003 Frontend đổi TODO → IN_PROGRESS. Giữ 33 task ID, 8 dependencies, ownership, mọi trạng thái TV2 và các DONE lịch sử. | Commits `e956801`–`87024de`, source/tests; 90 backend isolated và 24 frontend tests/build PASS gần nhất. Bootstrap ADMIN local và Login E2E thành công theo xác nhận người dùng; chưa hoàn tất browser/accessibility QA, chưa PR/merge main. Lần này chỉ sửa Markdown, không chạy lại tests, ứng dụng, bootstrap hoặc DB. |
