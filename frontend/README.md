@@ -60,11 +60,21 @@ for tokens, accessibility requirements and component conventions. The authentica
 is available after the server confirms `/me`; navigation entries are coming-soon placeholders,
 not working business modules or a client-side permission system.
 
+Navigation adapts to the viewport: desktop (>=1024px) starts with a 256px sidebar;
+the hamburger toggles a 72px icon rail. Tablet (768–1023px) starts with the icon rail
+and can expand it. Only mobile (<768px) uses a modal drawer with backdrop, Escape,
+close button, scroll lock and focus restoration. A single navigation is mounted at a
+time; resize preserves the selected module and closes an open mobile drawer.
+Icons have accessible names; compact items also have native title tooltips.
+Expansion preferences stay in memory, independently for desktop/tablet.
+
 Run all current frontend tests:
 
 ```powershell
 node --test src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js
 ```
 
-Unit tests and build checks do not replace browser QA; visual and interactive browser
-verification remains pending.
+Unit tests and build checks do not replace browser QA. Responsive navigation has also
+been checked in isolated headless Chrome with mocked auth responses and no backend
+requests; see the design-system document for the checked viewports and interactions.
+Real-account login, touch devices, screen readers, zoom and other browsers remain pending.
