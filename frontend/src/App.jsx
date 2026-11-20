@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, authClient } from './api/auth.js'
 import { ThemeToggle } from './theme/ThemeToggle.jsx'
+import { AppLayout } from './app/AppLayout.jsx'
+import { LoadingState } from './components/ui/LoadingState.jsx'
 
 function errorMessage(error, action) {
   if (error instanceof ApiError) {
@@ -106,6 +108,8 @@ export default function App() {
     }
   }
 
+  if (user) return <AppLayout user={user} onLogout={handleLogout} loggingOut={busy === 'logout'} error={error} notice={notice} />
+
   return (
     <main className="auth-page">
       <section className="brand-panel" aria-labelledby="app-title">
@@ -123,16 +127,11 @@ export default function App() {
           <span className="section-label">COMPUTER STORE</span>
           <h2 id="form-title">{user ? 'Chào mừng trở lại' : 'Đăng nhập'}</h2>
           <p className="form-description">{user ? 'Phiên đăng nhập của bạn đang hoạt động.' : 'Sử dụng tài khoản nhân viên để tiếp tục.'}</p>
-          {busy === 'checking' && <p className="checking-message" role="status"><span className="spinner" aria-hidden="true" />Đang kiểm tra phiên đăng nhập…</p>}
+          {busy === 'checking' && <LoadingState label="Đang kiểm tra phiên đăng nhập…" />}
           {error && <div id="auth-error" className="message message-error" role="alert">{error}</div>}
           {notice && <p className="message message-success" role="status">{notice}</p>}
           {!initialized && !busy ? (
             <button className="primary-button" type="button" onClick={() => loadSession()}>Thử kết nối lại<ArrowIcon /></button>
-          ) : user ? (
-            <div className="signed-in">
-              <div className="user-summary"><span className="user-avatar" aria-hidden="true">{user.username.slice(0, 1).toUpperCase()}</span><div><span className="user-caption">Đã đăng nhập với tài khoản</span><strong>{user.username}</strong></div></div>
-              <button className="primary-button" type="button" disabled={Boolean(busy)} onClick={handleLogout}>{busy === 'logout' ? <><span className="spinner" aria-hidden="true" />Đang đăng xuất…</> : <>Đăng xuất<ArrowIcon /></>}</button>
-            </div>
           ) : (
             <form onSubmit={handleLogin} aria-busy={busy === 'login'} aria-describedby={error ? 'auth-error' : undefined}>
               <fieldset disabled={Boolean(busy) || !initialized}>

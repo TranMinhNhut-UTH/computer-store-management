@@ -1,6 +1,7 @@
 # Computer Store Management — frontend
 
-React + Vite, JavaScript/JSX. Use Node.js `^20.19.0 || >=22.12.0` and npm.
+React + Vite, JavaScript/JSX. Use Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` and npm
+(the jsdom development test dependency requires these Node versions).
 
 From `frontend/`:
 
@@ -55,12 +56,14 @@ for the current page. No authentication data is stored there.
 
 `ThemeProvider` wraps the application once. Components use `useTheme()` and the shared
 `--csm-*` CSS variables. See [CSM Frontend Design System V1](../docs/frontend-design-system.md)
-for tokens, accessibility requirements and component conventions. Phase B is not implemented.
+for tokens, accessibility requirements and component conventions. The authenticated App Shell
+is available after the server confirms `/me`; navigation entries are coming-soon placeholders,
+not working business modules or a client-side permission system.
 
 Run all current frontend tests:
 
 ```powershell
-node --test src/theme/theme.test.js src/api/auth.test.js
+node --test src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js
 ```
 
 Unit tests and build checks do not replace browser QA; visual and interactive browser

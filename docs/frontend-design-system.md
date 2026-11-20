@@ -1,10 +1,10 @@
 # CSM Frontend Design System V1
 
-Giai đoạn A — UI Foundation, ngày 2026-11-18. Dùng chung cho hai thành viên; không đổi ownership/module V1. Tài liệu mô tả implementation local, chưa có nghĩa đã review/merge.
+Giai đoạn A — UI Foundation, ngày 2026-11-18; bổ sung Phase B — App Shell/shared components ngày 2026-11-20. Dùng chung cho hai thành viên; không đổi ownership/module V1. Phase B còn local, chưa review/merge.
 
 ## Nguyên tắc
 
-Modern Admin Dashboard, primary Blue, nội dung tiếng Việt; ưu tiên đọc nhanh, trạng thái rõ ràng, responsive và bàn phím. Giai đoạn A chỉ cung cấp tokens/theme và áp dụng vào Login hiện hữu. Chưa có App Shell, Sidebar, Dashboard hoặc trang nghiệp vụ; không thêm Warranty vào V1.
+Modern Admin Dashboard, primary Blue, nội dung tiếng Việt; ưu tiên đọc nhanh, trạng thái rõ ràng, responsive và bàn phím. Phase A cung cấp tokens/theme và Login; Phase B thêm App Shell chỉ sau xác thực. Chưa có Dashboard hoặc trang nghiệp vụ; không thêm Warranty vào V1.
 
 ## Tokens và màu sắc
 
@@ -14,7 +14,7 @@ Nguồn chuẩn: `frontend/src/styles/tokens.css` (kích thước), `themes.css`
 |---|---|---|---|
 | bg | #F8FAFC | #0B1220 | Nền ứng dụng |
 | surface | #FFFFFF | #151F30 | Bề mặt nội dung |
-| sidebar | #FFFFFF | #101827 | Dự trữ cho giai đoạn sau, chưa tạo sidebar |
+| sidebar | #FFFFFF | #101827 | Nền sidebar/drawer |
 | text | #0F172A | #F1F5F9 | Nội dung chính |
 | muted | #64748B | #94A3B8 | Nội dung phụ/placeholder trên nền bg/surface/input |
 | border | #E2E8F0 | #334155 | Phân cách/trang trí, không dùng làm dấu nhận biết input duy nhất |
@@ -86,4 +86,37 @@ npm run build
 
 Tests theme kiểm tra default, toggle hai chiều, persist/invalid/storage failure, root attributes, initializer và tương phản màu; tests auth hiện có chạy nguyên trạng bằng mock fetch, không gửi POST thật. Khi browser không khả dụng, có thể kiểm tra React SSR nhưng không coi đó là browser QA. Không ghi DONE khi chưa review/merge. Chưa có tracker ID riêng cho Design System, giữ tracker hiện có.
 
-Không sửa Backend/DB/Flyway, auth endpoint, ownership TV2; không tạo App Shell/Sidebar hoặc màn hình nghiệp vụ trong A. Không commit/push từ nhiệm vụ triển khai này.
+Không sửa Backend/DB/Flyway, auth endpoint, ownership TV2. Phase A không có App Shell; Phase B chỉ có shell/coming-soon, chưa tạo màn hình nghiệp vụ. Không tự mở rộng sang Phase C.
+
+## Phase B: App Shell và navigation
+
+`App.jsx` giữ auth state/CSRF flow hiện có. Chỉ khi GET `/me` đã xác nhận user mới render `AppLayout`; không có đường dẫn/fragment, browser storage hoặc flag development để bypass Login. `/me` chỉ trả userId/username: không tự tạo role hoặc client permission mapping. Không có fake user/session trong source runtime.
+
+`app/AppLayout.jsx` gồm Sidebar cố định, Topbar và MainContent. Topbar hiển thị username từ server, theme toggle và logout hiện có; không avatar/notification/tenant/role giả. Nav metadata nằm tại `app/navigation.js`; chọn mục cập nhật React state trong shell, không có router/URL routing. Tất cả mục đều là coming-soon, không gọi API nghiệp vụ, không có KPI hoặc dữ liệu mẫu. Có nhóm danh mục, giao dịch/kho và quản lý; payment/refund/return/adjustment nằm trong V1. Nhãn navigation-only không thay authorization của backend.
+
+Desktop sidebar 256px; ở <=900px chuyển sang drawer native `<dialog>` có backdrop semantic overlay. Nút mở có aria-expanded/aria-controls. Khi mở, focus vào nút đóng và khóa cuộn body; native modal giữ focus trong dialog/inert phần ngoài. Đóng bằng nút, overlay, Escape, chọn menu hoặc resize sang desktop. Đóng bình thường trả focus về opener; chọn menu chuyển focus tới MainContent; resize desktop chuyển focus tới content. Giữ skip-link, main landmark và PageHeader h1. Ở màn hình nhỏ Topbar wrap để tránh tràn ngang, username dài được ngắt dòng.
+
+## Shared components
+
+| Component | Props chính | Quy ước |
+|---|---|---|
+| Button | variant primary/secondary/ghost, loading, disabled, type, children | Mặc định type button; loading vô hiệu click và có aria-busy; ref React 19 được chuyển xuống button |
+| TextInput | label, id, error, hint và input props | useId khi thiếu id; nối label/help/error bằng aria-describedby; error có aria-invalid |
+| Card | as, className, children, HTML props | Surface/card/border/radius theo tokens; đặt aria-label khi cần tên section |
+| StatusBadge | variant neutral/success/warning/error, children | Luôn có chữ mô tả trạng thái; không chỉ phân biệt bằng màu |
+| PageHeader | title, description, actions | Page title h1 và actions area; dùng một PageHeader cho content hiện tại |
+| EmptyState | title, description, action | Không bịa dữ liệu; coming-soon giải thích chưa có chức năng |
+| LoadingState | label | role status và spinner reduced-motion |
+
+Các component nằm trong `components/ui/`, style tại `components/ui/ui.css`; shell tại `app/shell.css`. Tái sử dụng tokens của Phase A, không tạo palette/module CSS theme riêng. Không xây DataTable/Modal framework ở giai đoạn này. `PageHeader` hiện dùng id `page-title`, chỉ dùng một lần mỗi trang.
+
+Hai thành viên dùng cùng AppLayout/components khi triển khai module được giao. Chỉ thay coming-soon bằng page thật khi có task, API/permission contract và tests được duyệt; không dùng menu hiển thị để suy quyền, không đổi ownership. Không đưa fixtures hoặc mock fetch vào runtime.
+
+Test toàn bộ frontend:
+
+```powershell
+node --test src/app/AppLayout.test.js src/api/auth.test.js src/theme/theme.test.js
+npm run build
+```
+
+`jsdom` là devDependency duy nhất thêm trong Phase B, dùng React act/createRoot cho interaction/auth gate. Các auth response chỉ là stub trong tests, không gửi HTTP thật. Dialog được adapter trong jsdom để kiểm tra open/close/focus; native focus trap, backdrop, viewport/zoom và giao diện cần browser QA riêng. Chưa có bằng chứng browser QA PASS hoặc kiểm thử bằng tài khoản thực tế. Tracker không có ID App Shell riêng nên giữ nguyên.
