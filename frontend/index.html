@@ -1,9 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#142a34" />
+    <script>
+      // Apply preference before React/CSS paint; keep policy aligned with src/theme/theme.js.
+      (() => {
+        let theme = 'light'
+        try { if (localStorage.getItem('csm-theme') === 'dark') theme = 'dark' } catch {}
+        document.documentElement.dataset.theme = theme
+        document.documentElement.style.colorScheme = theme
+      })()
+    </script>
     <title>Computer Store Management</title>
   </head>
   <body>

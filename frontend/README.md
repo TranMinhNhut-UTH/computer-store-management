@@ -17,9 +17,51 @@ npm run build
 
 Build output is written to `dist/`. Both `dist/` and `node_modules/` are ignored by Git.
 
-The initial page makes no API calls and runs without the backend. Login UI is not implemented.
+The login page checks the current session and obtains a CSRF token when it opens. If the
+backend is unavailable, it shows a connection error and a retry button.
 The development proxy forwards relative `/api` requests to `http://127.0.0.1:8080` while
 preserving the original Host header. Future API clients must follow the backend's session/CSRF
 contract; the proxy does not disable CSRF. No wildcard CORS is enabled.
 
 The proxy applies only to the development server. Production API routing/deployment remains separate.
+
+## Authentication
+
+The client uses relative `/api/v1/auth` URLs and `credentials: 'same-origin'`:
+
+- GET `/me` restores a session; anonymous 401 shows the login form.
+- GET `/csrf` obtains the server-provided `headerName` and masked `token`.
+- POST `/login` sends the entered username/password unchanged with a fresh CSRF header.
+- Successful login is confirmed by GET `/me`, then GET `/csrf` refreshes the rotated token.
+- POST `/logout` uses a fresh CSRF header; on success, clear the displayed user and refresh CSRF.
+
+Tokens exist only in memory during requests. No password, token, session ID or authentication
+state is stored in localStorage/sessionStorage. The browser manages the session cookie.
+Failed POST requests are not retried automatically. No demo accounts or fake runtime authentication
+are included; successful login/logout require a real employee account.
+
+Run the client tests (fetch is stubbed; no HTTP POST or database access):
+
+```powershell
+node --test src/api/auth.test.js
+```
+
+## Light/dark theme
+
+Use the theme button on the login page to switch between light and dark without reloading.
+Light is the default. The preference is stored as `light` or `dark` under `csm-theme` in
+localStorage; invalid values fall back to light. If storage is blocked, switching still works
+for the current page. No authentication data is stored there.
+
+`ThemeProvider` wraps the application once. Components use `useTheme()` and the shared
+`--csm-*` CSS variables. See [CSM Frontend Design System V1](../docs/frontend-design-system.md)
+for tokens, accessibility requirements and component conventions. Phase B is not implemented.
+
+Run all current frontend tests:
+
+```powershell
+node --test src/theme/theme.test.js src/api/auth.test.js
+```
+
+Unit tests and build checks do not replace browser QA; visual and interactive browser
+verification remains pending.
