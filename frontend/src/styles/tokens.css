@@ -1,0 +1,24 @@
+:root {
+  --csm-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --csm-font-xs: .75rem;
+  --csm-font-sm: .875rem;
+  --csm-font-md: 1rem;
+  --csm-font-lg: 1.25rem;
+  --csm-font-title: 2rem;
+  --csm-space-1: 4px;
+  --csm-space-2: 8px;
+  --csm-space-3: 12px;
+  --csm-space-4: 16px;
+  --csm-space-5: 20px;
+  --csm-space-6: 24px;
+  --csm-space-8: 32px;
+  --csm-space-10: 40px;
+  --csm-space-12: 48px;
+  --csm-space-16: 64px;
+  --csm-space-20: 80px;
+  --csm-radius-control: 8px;
+  --csm-radius-card: 12px;
+  --csm-radius-round: 50%;
+  --csm-control-height: 52px;
+  --csm-content-width: 1200px;
+}
