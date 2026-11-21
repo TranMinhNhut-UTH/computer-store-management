@@ -1,6 +1,6 @@
 # Authorization Foundation Part 3A
 
-Ngày 2026-11-21; triển khai local trên `feature/authorization`, base `cf72b05` (Foundation PR #1 đã merge main). Part 3A chưa commit/review/merge. Chỉ có contract actor, đọc role/permission và guard dùng chung; không có CRUD, endpoint mới hoặc permission matrix được tự phê duyệt.
+Ngày 2026-11-21; Part 3A trên `feature/authorization`, base `cf72b05` (Foundation PR #1 đã merge main), đã commit/push `2e152a3`, chưa review/merge Part 3A. Part 3B-2A hiện là implementation local của catalog/policy/tests được mô tả ở cuối tài liệu; không có CRUD/endpoint mới, seed hoặc permission matrix được tự phê duyệt.
 
 ## Contract cho các module
 
@@ -49,4 +49,42 @@ Regression gồm các test UTC/shared error/validation, Security Filter, employe
 
 Kết quả 2026-11-21: **126/126 PASS**, 0 failure/error/skipped: 36 tests mới của Part 3A và 90 regression tests. Có kiểm tra proxy read-only và tham gia transaction có sẵn, không khởi động Spring Boot với DB, không gọi MySQL/Flyway hoặc bootstrap thật.
 
-PENDING: permission catalog và role-permission/endpoint/use-case matrix (P03), cơ chế áp policy cho từng nghiệp vụ, thu hồi phiên và đồng bộ quyền khi account đổi trạng thái, kiểm chứng SQL/query plans/lazy-loading behavior và concurrency trên MySQL được phê duyệt. Chưa mở business API, tạo seed, chạy migration, bootstrap Admin hoặc triển khai Part 3B.
+PENDING: phê duyệt permission catalog/role mapping và endpoint/use-case policy (P03), tích hợp từng nghiệp vụ, scope/ownership, thu hồi phiên và đồng bộ quyền khi account đổi trạng thái, kiểm chứng SQL/query plans/concurrency trên MySQL được phép. Part 3B-2A chỉ thêm catalog/policy guard/tests local như dưới đây; chưa mở business API, tạo seed, chạy migration, bootstrap Admin hoặc cấp role/permission runtime.
+
+## Authorization Part 3B-2A — catalog và policy contract local
+
+Ngày 2026-11-21, dựa trên [Permission Matrix V1](authorization-permission-matrix.md); **chưa commit/push**. D01–D13 không tự trở thành APPROVED.
+
+| Thành phần mới | Contract |
+|---|---|
+| PermissionCode | Enum đúng 60 code, grouping 16 module; code() là tên canonical, fromCode() lookup chính xác, không trim/đổi case hoặc tạo code mới. |
+| PermissionCode.Status | 51 ELIGIBLE_PROPOSED: đủ để chuẩn bị kỹ thuật; 9 PROVISIONAL_DENY: luôn giữ DENY qua policy. Cả hai không có nghĩa đã approve, seed hoặc cấp cho role. |
+| PermissionPolicy.requirePermission(String) | Code phải do server chọn. Gọi AuthorizationService.requirePermission để xác minh actor và mapping thực tế, sau đó chỉ chấp nhận code có trong catalog và ELIGIBLE_PROPOSED. Trả CurrentActor từ guard cũ khi cả hai điều kiện đạt; không fallback theo role hoặc UI. |
+
+Ví dụ contract cho Service tương lai (không tạo endpoint):
+
+```java
+CurrentActor actor = permissionPolicy.requirePermission(PermissionCode.PRODUCT_READ.code());
+// Còn phải kiểm tra record scope/projection và mọi business predicates của use case.
+```
+
+- Nguồn role/permission không đổi: CurrentActorService → RoleResolutionService → AuthorizationService như Part 3A. Catalog không chứa role-to-permission grants, không đọc quyền từ client, không seed/ghi DB hoặc cache quyền vào session.
+- Thứ tự giữ authentication trước: anonymous/inactive vẫn 401 UNAUTHENTICATED, kể cả required code unknown/provisional. Authenticated thiếu mapping, unknown hoặc provisional trả 403 ACCESS_DENIED với detail hiện có. Lỗi hạ tầng không biến thành allow/403; handler 500 sanitized hiện có vẫn xử lý.
+- PROVISIONAL_DENY gồm ROLE_READ, PERMISSION_READ, CUSTOMER_DEACTIVATE, ADJUSTMENT_REJECT, ADJUSTMENT_CANCEL, SALE_COMPLETE, PAYMENT_VOID, REFUND_READ, REFUND_CREATE. Có mapping nhầm trong DB vẫn không qua PermissionPolicy; unknown canonical code có mapping cũng bị từ chối.
+- AuthorizationService/RoleResolutionService Part 3A **không bị sửa**; raw primitive không thực thi catalog status. Mọi module TV1/TV2 tích hợp permission contract mới phải dùng PermissionPolicy, không gọi raw requirePermission như đường vòng bỏ qua eligibility. requireAnyRole chỉ là AND gate bổ sung khi use-case contract yêu cầu, không role-bypass.
+- Policy không mở transaction mới hoặc thay transaction owner. Resolver vẫn dùng proxy read-only/REQUIRED như Part 3A và tham gia transaction của caller nếu có. Guard phải chạy trước mutation; state, ownership, field scope, locks, composite permission và rollback vẫn thuộc Service use case. Policy đơn lẻ không đủ cho return/refund, adjustment self-approval hoặc bảo vệ ADMIN cuối.
+- SecurityConfig, login/logout/CSRF, /me và mọi business denyAll giữ nguyên. Chưa có consumer production gọi policy để mở nghiệp vụ, seed permission/role_permission, cấp 51 quyền, thay Bootstrap, tạo ADMIN hoặc triển khai D13 last-active-ADMIN guard.
+
+### Kiểm thử Part 3B-2A
+
+Isolated tests mới: PermissionCodeTest **5**, PermissionPolicyTest **70**, PermissionPolicyMappingTest **19** = **94 PASS**; bao gồm parameterized cases. Dùng real guard/resolver/actor chain với mock repositories/EntityManager, standalone MVC và controllers chỉ tồn tại trong test source. Kiểm tra đủ 60 code, không trùng/typo, grouping/status, 9 mapped provisional vẫn DENY, ADMIN không wildcard/default grants, unknown, server-selected code, mapping thay đổi, active account, 401/403 và lỗi 500 sanitized.
+
+Chạy cùng **126 regression tests cũ** (18 classes UTC/shared/security/auth/bootstrap/authorization), tổng **220/220 PASS**, 0 failure/error/skipped. Maven test dùng danh sách tường minh 21 classes; không chọn ComputerStoreBackendApplicationTests/full Boot context, không datasource/MySQL/Flyway/bootstrap thật. SecurityConfigTest và AuthenticationHttpTest kiểm tra filter/auth/session/CSRF thực tế trong context MVC giới hạn, không phải kiểm thử runtime với DB.
+
+Chạy lại riêng tests mới từ backend:
+
+```powershell
+.\mvnw.cmd -o "-Dtest=PermissionCodeTest,PermissionPolicyTest,PermissionPolicyMappingTest" test
+```
+
+Permission/role mapping runtime, seed rollout, API guards cụ thể và các scope/transaction/session/race còn PENDING; isolated PASS không chứng minh MySQL execution hoặc contract đã được approve.
