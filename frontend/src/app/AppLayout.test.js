@@ -37,6 +37,7 @@ before(async () => {
     if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
+    if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
@@ -105,6 +106,22 @@ test('theme toggles persist across shell navigation', async () => {
   assert.equal(document.documentElement.dataset.theme, 'dark')
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'light')
+})
+
+test('Category navigation is behind me, handles denyAll without fake data and preserves theme/logout', async () => {
+  authenticated = true
+  await render()
+  await click(container.querySelector('aside [data-nav-id="categories"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
+  assert.match(container.querySelector('.category-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(container.querySelector('table'), null)
+  assert.equal(requests.filter(request => request.url.startsWith('/api/v1/categories')).length, 1)
+  await click(container.querySelector('.theme-toggle'))
+  assert.equal(document.documentElement.dataset.theme, 'dark')
+  assert.equal(container.querySelectorAll('nav#application-navigation').length, 1)
+  await click([...container.querySelectorAll('button')].find(button => button.textContent === 'Đăng xuất'))
+  assert.ok(container.querySelector('#username'))
+  assert.equal(container.querySelector('.category-page'), null)
 })
 
 test('drawer opens, focuses close, Escape closes and restores focus', async () => {

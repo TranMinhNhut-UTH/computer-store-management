@@ -71,10 +71,38 @@ Expansion preferences stay in memory, independently for desktop/tablet.
 Run all current frontend tests:
 
 ```powershell
-node --test src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js
+node --test --test-concurrency=1 src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js src/api/categories.test.js src/features/categories/CategoryPage.test.js
 ```
 
 Unit tests and build checks do not replace browser QA. Responsive navigation has also
 been checked in isolated headless Chrome with mocked auth responses and no backend
 requests; see the design-system document for the checked viewports and interactions.
 Real-account login, touch devices, screen readers, zoom and other browsers remain pending.
+
+## Category Management — Frontend Part 2
+
+Choose **Danh mục** in the authenticated shell to open **Quản lý danh mục**. Other
+modules retain their existing placeholders. Navigation does not grant permissions.
+The Category backend still has HTTP denyAll and no runtime grants: a real request
+currently shows a clear access-denied state, with no sample-data fallback.
+
+The page implements list/search by code or name, active/all/inactive filters, fixed
+20-item API pagination, loading/empty/error states, create/edit dialogs and confirmed
+deactivation. Edit/confirmation fetch fresh detail before enabling submission.
+Only code/name/description are sent; IDs remain decimal strings. Update cannot change
+active/createdAt. No delete/reactivate action is offered.
+
+`api/client.js` shares sanitized errors and same-origin cookie transport with the existing
+auth client. Category mutations fetch a fresh server-named CSRF header before each
+POST/PUT; failures are never retried automatically. No auth data enters browser storage.
+400/401/403/404/409 are handled explicitly. A deactivation 409 explains the conservative
+Product-reference restriction without claiming every conflict has that cause.
+
+Native modal dialogs provide focus containment, Escape/cancel, scroll lock and focus
+restoration; dismiss is disabled while saving. CSS uses existing semantic tokens for
+both themes. Tables scroll within their own region on narrow screens.
+
+Validation: 60/60 frontend tests PASS (24 regression + 36 new), using only mocked APIs;
+production build PASS. Browser render smoke checks use intercepted APIs only and do
+not prove Category E2E. Real HTTP access, approved runtime grants, successful live CRUD,
+keyboard/screen-reader/touch/zoom and cross-browser QA remain pending.

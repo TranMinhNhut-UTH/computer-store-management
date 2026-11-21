@@ -1,37 +1,11 @@
+import { ApiError, createApiTransport } from './client.js'
+export { ApiError } from './client.js'
 const BASE_URL = '/api/v1/auth'
-
-export class ApiError extends Error {
-  constructor(status, code = '') {
-    super('Auth request failed')
-    this.name = 'ApiError'
-    this.status = status
-    this.code = code
-  }
-}
 
 // Cookies stay browser-managed; CSRF tokens exist only in request scope, never browser storage.
 export function createAuthClient(fetchRequest = globalThis.fetch.bind(globalThis)) {
-  async function request(path, options = {}) {
-    let response
-    try {
-      response = await fetchRequest(`${BASE_URL}${path}`, {
-        ...options,
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { Accept: 'application/json', ...options.headers },
-      })
-    } catch (error) {
-      if (error.name === 'AbortError') throw error
-      throw new ApiError(0)
-    }
-    if (!response.ok) {
-      const problem = await response.json().catch(() => null)
-      // Do not expose raw backend detail, validation values or internal exception messages.
-      throw new ApiError(response.status, typeof problem?.code === 'string' ? problem.code : '')
-    }
-    if (response.status === 204) return null
-    try { return await response.json() } catch { throw new ApiError(502) }
-  }
+  const transport = createApiTransport(fetchRequest)
+  const request = (path, options) => transport(`${BASE_URL}${path}`, options)
 
   function currentUser(payload) {
     if (typeof payload?.userId !== 'string' || typeof payload?.username !== 'string') throw new ApiError(502)
