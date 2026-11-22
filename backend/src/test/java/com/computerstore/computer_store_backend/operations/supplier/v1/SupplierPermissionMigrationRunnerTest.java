@@ -1,11 +1,15 @@
 package com.computerstore.computer_store_backend.operations.supplier.v1;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import org.flywaydb.core.api.Location;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationState;
 import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.migration.JavaMigration;
+import org.flywaydb.core.internal.resolver.ChecksumCalculator;
+import org.flywaydb.core.internal.resource.classpath.ClassPathResource;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,6 +40,23 @@ class SupplierPermissionMigrationRunnerTest {
         assertFalse(configuration.isBaselineOnMigrate());
         assertFalse(configuration.isOutOfOrder());
         assertFalse(configuration.isCreateSchemas());
+    }
+
+    @Test void allSevenMigrationSourcesRetainTheirVersionsAndChecksums() throws Exception {
+        var previous = SupplierPermissionMigrationRunner.previousMigrations();
+        assertEquals(List.of("2", "3", "4", "5"),
+                Arrays.stream(previous).map(migration -> migration.getVersion().getVersion()).toList());
+        assertEquals(List.of(947719693, 253774843, -1732158983, 155246154),
+                Arrays.stream(previous).map(JavaMigration::getChecksum).toList());
+        assertSqlChecksum("db/migration", "V1__create_initial_schema.sql", -1142478933);
+        assertSqlChecksum("operations/supplier/v1", "V6__register_supplier_permissions.sql", -1416705504);
+        assertSqlChecksum("operations/supplier/v1", "V7__grant_supplier_permissions.sql", 982398228);
+    }
+
+    private void assertSqlChecksum(String location, String file, int expected) {
+        var resource = new ClassPathResource(new Location("classpath:" + location),
+                location + "/" + file, getClass().getClassLoader(), StandardCharsets.UTF_8);
+        assertEquals(expected, ChecksumCalculator.calculate(resource));
     }
 
     @Test void onlyTheSelectedStageMayBePendingAndEveryChecksumMustMatch() {

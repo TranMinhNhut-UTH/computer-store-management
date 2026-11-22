@@ -31,34 +31,24 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
-        // Supplier V7 live read-back passed. SupplierService enforces each operation grant.
-        return buildSupplierBoundary(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
-    }
-
-    SecurityFilterChain buildSupplierBoundary(HttpSecurity http,
-            ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
-            SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler, boolean supplierReleased) throws Exception {
         return http
-                .authorizeHttpRequests(authorize -> {
-                    authorize
+                .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
-                        // Category V1 only: service PermissionPolicy enforces the exact operation grant.
+                        // The service layer checks each operation's permission against current server grants.
                         .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/{id}").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/categories").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/categories", "/api/v1/categories/{id}/deactivate").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/categories/{id}").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/categories/{id}/deactivate").authenticated();
-                    if (supplierReleased) {
-                        authorize.requestMatchers(HttpMethod.GET, "/api/v1/suppliers", "/api/v1/suppliers/{id}").authenticated()
-                                .requestMatchers(HttpMethod.POST, "/api/v1/suppliers", "/api/v1/suppliers/{id}/deactivate").authenticated()
-                                .requestMatchers(HttpMethod.PUT, "/api/v1/suppliers/{id}").authenticated();
-                    }
-                    authorize.anyRequest().denyAll();
-                })
+                        .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/{id}").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/products", "/api/v1/products/{id}/deactivate").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/products/{id}", "/api/v1/products/{id}/price").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/suppliers", "/api/v1/suppliers/{id}").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/suppliers", "/api/v1/suppliers/{id}/deactivate").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/suppliers/{id}").authenticated()
+                        .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler))
                 .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens).csrfTokenRequestHandler(csrfHandler))

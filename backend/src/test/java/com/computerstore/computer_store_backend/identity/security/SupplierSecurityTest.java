@@ -143,6 +143,19 @@ class SupplierSecurityTest {
         verifyNoInteractions(suppliers);
     }
 
+    @Test void productGrantsDoNotAuthorizeSupplierOperations() throws Exception {
+        when(roles.getResultList()).thenReturn(List.of("MANAGER"));
+        when(grants.getResultList()).thenReturn(List.of("PRODUCT_READ", "PRODUCT_CREATE", "PRODUCT_UPDATE",
+                "PRODUCT_PRICE_UPDATE", "PRODUCT_DEACTIVATE"));
+        for (var request : List.of(get(BASE), get(BASE + "/7"))) {
+            mvc.perform(request.with(user(principal))).andExpect(status().isForbidden());
+        }
+        for (var request : mutations()) {
+            mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(suppliers);
+    }
+
     @Test void csrfAndUnlistedRoutesRemainDeniedAndFieldsAreValidated() throws Exception {
         when(roles.getResultList()).thenReturn(List.of("MANAGER"));
         when(grants.getResultList()).thenReturn(MANAGER_GRANTS);

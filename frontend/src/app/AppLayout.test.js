@@ -38,6 +38,7 @@ before(async () => {
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
@@ -117,6 +118,37 @@ test('Category links update the URL and browser Back and Forward restore the sel
   await travel('forward')
   assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'categories')
   assert.ok(container.querySelector('.category-page'))
+})
+
+test('direct Product navigation keeps the session gate and renders the denied state without sample data', async () => {
+  window.history.replaceState(null, '', '/products')
+  await render()
+  assert.ok(container.querySelector('#username'))
+  assert.equal(requests.some(request => request.url.startsWith('/api/v1/products')), false)
+  authenticated = true
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  await render()
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý sản phẩm')
+  assert.match(container.querySelector('.product-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(container.querySelector('.product-page table'), null)
+})
+
+test('the same authenticated shell navigates between Category, Product and Supplier', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/products')
+  await render()
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý sản phẩm')
+  await click(container.querySelector('aside [data-nav-id="suppliers"]'))
+  assert.equal(window.location.pathname, '/suppliers')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý nhà cung cấp')
+  assert.match(container.querySelector('#supplier-page [role=alert]').textContent, /không có quyền/)
+  await click(container.querySelector('aside [data-nav-id="categories"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
+  for (const module of ['products', 'suppliers', 'categories']) {
+    assert.equal(requests.filter(request => request.url.startsWith('/api/v1/' + module)).length, 1)
+  }
+  assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 1)
 })
 
 test('me-confirmed user sees shell and navigation changes only coming-soon content', async () => {

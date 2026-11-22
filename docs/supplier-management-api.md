@@ -1,6 +1,6 @@
 # Supplier Management V1
 
-PAR-001 implements the five operations below. The current runtime denies these HTTP routes pending live V7 deployment and read-back. The isolated HTTP candidate exercises the same filter chain with only the Supplier boundary enabled. The signed-in frontend route is `/suppliers`; it uses the real API and shows the server's access-denied result while the boundary is closed.
+PAR-001 implements the five operations below. The operator confirmed live V7 read-back. The integration branch enables the five authenticated Supplier routes alongside Product and Category. The signed-in page at `/suppliers` uses server-reported action permissions; each endpoint enforces its own grant. Live smoke tests on the integration branch are pending.
 
 | Method and path | Required permission | Success |
 |---|---|---|
@@ -24,7 +24,7 @@ The disposable MySQL test exercised both orderings using separate JDBC transacti
 
 ## Permission rollout readiness
 
-The approved Supplier rollout grants MANAGER `SUPPLIER_READ`, `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, and `SUPPLIER_DEACTIVATE`. WAREHOUSE_STAFF gets `SUPPLIER_READ` only. ADMIN and SALES_STAFF get zero Supplier grants. This approval covers the policy. Live execution remains a separate operator step.
+The approved Supplier rollout grants MANAGER `SUPPLIER_READ`, `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, and `SUPPLIER_DEACTIVATE`. WAREHOUSE_STAFF gets `SUPPLIER_READ` only. ADMIN and SALES_STAFF get zero Supplier grants. The operator confirmed V6 and V7 applied successfully, with four Supplier permissions and five grants.
 
 | Version | Flyway SQL checksum | Required outcome |
 |---|---:|---|
@@ -39,4 +39,4 @@ The opt-in integration test ran V1 and the actual V6/V7 SQL through Flyway on My
 .\mvnw.cmd -o '-Dtest=SupplierPermissionRolloutIT' '-Dcsm.mysql.home=C:\Program Files\MySQL\MySQL Server 8.0' test
 ~~~
 
-Use the [Supplier runtime runbook](supplier-runtime-activation.md) to verify the target, backup and actual V1–V5 history. The manual runner validates and registers the original Category and Product Java migrations and targets only V6 or V7. The Supplier branch builds independently, while live rollout requires the released V1–V5 history and the original Product migration classes. After successful live V7 read-back, use the linked release patch and verify the application routes. Supplier remains disabled in the preparation commit, and PAR-001 remains IN_PROGRESS.
+The [Supplier runtime runbook](supplier-runtime-activation.md) records the staged release procedure. The integration branch packages the original V1–V7 sources and starts with Flyway disabled and Hibernate schema validation enabled. Use the already migrated schema for live smoke tests. PAR-001 remains IN_PROGRESS pending smoke tests and Purchasing integration.
