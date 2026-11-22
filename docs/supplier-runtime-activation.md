@@ -8,8 +8,7 @@ The client prompts for the password without echo. Run the current block and stop
 
 ~~~powershell
 $ErrorActionPreference = 'Stop'
-$supplierRoot = 'C:\Code\computer-store-management-supplier'
-$productRoot = 'C:\Code\computer-store-management'
+$supplierRoot = 'C:\Code\computer-store-management'
 $mysqlBin = 'C:\Program Files\MySQL\MySQL Server 8.0\bin'
 $supplierMysql = Join-Path $mysqlBin 'mysql.exe'
 $supplierDump = Join-Path $mysqlBin 'mysqldump.exe'
@@ -109,44 +108,72 @@ Get-Item -LiteralPath $supplierBackup | Select-Object FullName,Length
 $supplierBackupHash
 ~~~
 
-## 3. Build the runner and stage the original migration classes
+If a verified pre-V6 backup already exists from the same uninterrupted write freeze, keep it and skip the dump block. In the original terminal, retain the recorded `$supplierBackup` and `$supplierBackupHash`. In a fresh terminal, rerun section 1 and set them using the existing file path and the SHA-256 recorded when the dump was created. Use `$supplierBackup = Read-Host 'Existing pre-V6 backup path'` and `$supplierBackupHash = Read-Host 'Recorded pre-V6 SHA-256'`. If the write freeze ended or the backup cannot be verified, take a fresh backup.
 
-Use the released Product checkout at 5230619. The classpath imports only its V4/V5 classes and frozen payload, so Flyway sees one V1 resource and the original V2–V5 implementations. The artifact check runs without connecting to MySQL.
+## 3. Build the runner and export the original Product migration sources
+
+Run with JDK 21 available as `java` and `javac`. The block works directly from the Supplier workspace. It exports only three Java sources from the pinned Product commit into a unique directory under the ignored `backend/target`, verifies each Git blob, and compiles them against Supplier's Flyway dependency. The staged class directory stays available for both stages. The build leaves the checked-out branch and source files alone.
 
 ~~~powershell
+$supplierRoot = 'C:\Code\computer-store-management'
 $productRelease = '523061901a8f5881c196da36e3fbdc6596fdc4d7'
-if ((git -C $productRoot rev-parse HEAD) -cne $productRelease -or
-    @(git -C $productRoot status --porcelain --untracked-files=no).Count) {
-    throw 'Expected the clean released Product source at 5230619.'
+if ((git -C $supplierRoot branch --show-current) -cne 'feature/supplier-management') {
+    throw 'Run this block on the Supplier branch.'
 }
-Push-Location (Join-Path $productRoot 'backend')
-try {
-    .\mvnw.cmd -DskipTests compile
-    if ($LASTEXITCODE -ne 0) { throw 'Product artifact build failed.' }
-} finally { Pop-Location }
+$verifiedProductCommit = git -C $supplierRoot rev-parse --verify "${productRelease}^{commit}"
+if ($LASTEXITCODE -ne 0 -or $verifiedProductCommit -cne $productRelease) {
+    throw 'Pinned Product commit is unavailable. Fetch origin feature/product-management, then check again.'
+}
 
 Set-Location (Join-Path $supplierRoot 'backend')
 .\mvnw.cmd -DskipTests compile dependency:build-classpath '-DincludeScope=runtime' '-Dmdep.outputFile=target/supplier-rollout-classpath.txt'
 if ($LASTEXITCODE -ne 0) { throw 'Supplier classpath build failed.' }
+$runtimeClasspath = (Get-Content -LiteralPath 'target/supplier-rollout-classpath.txt' -Raw).Trim()
 
-$productPackage = 'com\computerstore\computer_store_backend\operations\product\v1'
-$artifactRoot = Join-Path $PWD ("target\supplier-prior-" + [guid]::NewGuid())
-$artifactPackage = Join-Path $artifactRoot $productPackage
-[void](New-Item -ItemType Directory -Path $artifactPackage -Force)
-$originalPackage = Join-Path $productRoot ("backend\target\classes\" + $productPackage)
-Get-ChildItem -LiteralPath $originalPackage -File |
-    Where-Object { $_.Name -match '^(FrozenProductRolloutV1(?:\$.+)?|V4__register_product_permissions|V5__grant_product_permissions)\.class$' } |
-    Copy-Item -Destination $artifactPackage
-$supplierClasspath = (@((Join-Path $PWD 'target\classes'), $artifactRoot,
-    (Get-Content -LiteralPath 'target/supplier-rollout-classpath.txt' -Raw).Trim()) -join ';')
+$productSourceDir = 'backend/src/main/java/com/computerstore/computer_store_backend/operations/product/v1'
+$productSources = @(
+    "$productSourceDir/FrozenProductRolloutV1.java",
+    "$productSourceDir/V4__register_product_permissions.java",
+    "$productSourceDir/V5__grant_product_permissions.java"
+)
+$buildDir = (New-Item -ItemType Directory -Path (Join-Path $PWD ("target\supplier-prior-" + [guid]::NewGuid()))).FullName
+$archive = Join-Path $buildDir 'product-sources.zip'
+$exportDir = Join-Path $buildDir 'sources'
+$artifactRoot = (New-Item -ItemType Directory -Path (Join-Path $buildDir 'classes')).FullName
+# Keep exported Java bytes identical to the Git blobs on Windows.
+git -C $supplierRoot -c core.autocrlf=false -c core.eol=lf archive --format=zip "--output=$archive" $productRelease -- @productSources
+if ($LASTEXITCODE -ne 0) { throw 'Pinned Product source export failed.' }
+Expand-Archive -LiteralPath $archive -DestinationPath $exportDir
+$sourceFiles = foreach ($source in $productSources) {
+    $file = Join-Path $exportDir $source
+    $expectedBlob = git -C $supplierRoot rev-parse --verify "${productRelease}:$source"
+    if ($LASTEXITCODE -ne 0) { throw "Cannot resolve pinned source $source." }
+    $actualBlob = git -C $supplierRoot hash-object --no-filters -- $file
+    if ($LASTEXITCODE -ne 0 -or $actualBlob -cne $expectedBlob) {
+        throw "Exported source does not match pinned blob $source."
+    }
+    $file
+}
+& javac --release 21 -encoding UTF-8 -classpath $runtimeClasspath -d $artifactRoot @sourceFiles
+if ($LASTEXITCODE -ne 0) { throw 'Pinned Product migration compilation failed.' }
+
+$supplierClasspath = @($artifactRoot, (Join-Path $PWD 'target\classes'), $runtimeClasspath) -join ';'
 $supplierRunner = 'com.computerstore.computer_store_backend.operations.supplier.v1.SupplierPermissionMigrationRunner'
 & java -cp $supplierClasspath $supplierRunner --verify-artifacts
 if ($LASTEXITCODE -ne 0) { throw 'Released migration artifact verification failed.' }
 
-function Invoke-SupplierStage([ValidateSet('A','B')][string]$stage) {
-    if ((Get-FileHash -LiteralPath $supplierBackup -Algorithm SHA256).Hash -cne $supplierBackupHash) {
-        throw 'Verified backup checksum changed.'
+function Assert-SupplierBackup {
+    if (!(Test-Path -LiteralPath $supplierBackup -PathType Leaf) -or
+        (Get-Item -LiteralPath $supplierBackup).Length -lt 1024 -or
+        !(Select-String -LiteralPath $supplierBackup -SimpleMatch ('USE ' + [char]96 + 'computer_store_dev' + [char]96 + ';') -Quiet) -or
+        !(Select-String -LiteralPath $supplierBackup -SimpleMatch 'Dump completed on' -Quiet) -or
+        (Get-FileHash -LiteralPath $supplierBackup -Algorithm SHA256).Hash -ne $supplierBackupHash) {
+        throw 'Current pre-V6 backup could not be verified.'
     }
+}
+
+function Invoke-SupplierStage([ValidateSet('A','B')][string]$stage) {
+    Assert-SupplierBackup
     $secret = Read-Host "Local MySQL password for stage $stage" -AsSecureString
     try {
         $env:DB_USERNAME = $supplierUser
@@ -159,6 +186,8 @@ function Invoke-SupplierStage([ValidateSet('A','B')][string]$stage) {
     }
 }
 ~~~
+
+The offline runner check loads the original Category and Product classes and verifies their versions, descriptions and checksums. Product V4 must be -1732158983 and V5 must be 155246154. The exported classes add no Flyway SQL resources to the classpath.
 
 ## 4. Apply V6, then V7
 
