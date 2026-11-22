@@ -71,6 +71,8 @@ public final class SupplierPermissionMigrationRunner {
 
     static void verifyResolved(MigrationInfo[] entries, Stage stage) {
         if (entries.length != CHECKSUMS.size()) throw new IllegalStateException("Unexpected resolved migrations.");
+        // Flyway 12.4's MigrationInfoImpl exposes descriptions through getDescription().
+        // The installed descriptions were already checked against Flyway history.
         for (int index = 0; index < entries.length; index++) {
             var migration = entries[index];
             int version = index + 1;
@@ -78,7 +80,7 @@ public final class SupplierPermissionMigrationRunner {
                     : version == stage.target() ? MigrationState.PENDING : MigrationState.ABOVE_TARGET;
             if (migration.getVersion() == null || !Integer.toString(version).equals(migration.getVersion().getVersion())
                     || !CHECKSUMS.get(index).equals(migration.getResolvedChecksum())
-                    || !DESCRIPTIONS.get(index).equals(migration.getResolvedDescription())
+                    || !DESCRIPTIONS.get(index).equals(migration.getDescription())
                     || migration.getState() != expectedState) {
                 throw new IllegalStateException("Unexpected migration state before Supplier rollout.");
             }
@@ -127,30 +129,40 @@ public final class SupplierPermissionMigrationRunner {
     }
 
     public static void main(String[] args) {
+        String phase = "arguments and local credentials";
         try {
             if (Arrays.equals(args, new String[] {"--verify-artifacts"})) {
+                phase = "migration artifacts";
                 previousMigrations();
                 System.out.println("Category V2/V3 and Product V4/V5 artifacts match expected metadata.");
                 return;
             }
             var selected = stage(args);
+            phase = "migration artifacts";
             var previous = previousMigrations();
+            phase = "local credentials";
             var user = System.getenv("DB_USERNAME");
             var password = System.getenv("DB_PASSWORD");
             if (user == null || user.isBlank() || password == null || password.isBlank()) {
                 throw new IllegalArgumentException("Local MySQL credentials are required.");
             }
+            phase = "JDBC target and installed history";
             verifyTarget(user, password, selected);
+            phase = "Flyway migration resolution";
             var flyway = configuration(selected, previous).dataSource(URL, user, password).load();
             verifyResolved(flyway.info().all(), selected);
+            phase = "Flyway migration execution";
             var result = flyway.migrate();
+            phase = "Flyway execution result";
             if (!result.success || result.migrationsExecuted != 1
                     || !Integer.toString(selected.target()).equals(result.migrations.getFirst().version)) {
                 throw new IllegalStateException("Expected exactly the requested migration.");
             }
             System.out.println("Supplier V" + selected.target() + " applied. Run the live read-back before proceeding.");
         } catch (Exception failure) {
-            System.err.println("Supplier rollout stopped. Check the target, migration artifacts and history. Do not retry or repair automatically.");
+            // Do not include JDBC or Flyway messages. They can contain connection information.
+            System.err.println("Supplier rollout stopped during " + phase
+                    + ". Inspect the target and history before any retry or repair.");
             System.exit(1);
         }
     }

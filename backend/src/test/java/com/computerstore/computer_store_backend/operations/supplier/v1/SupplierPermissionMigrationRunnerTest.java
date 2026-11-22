@@ -43,6 +43,9 @@ class SupplierPermissionMigrationRunnerTest {
         var stageB = SupplierPermissionMigrationRunner.stage(flags("B"));
         assertDoesNotThrow(() -> SupplierPermissionMigrationRunner.verifyResolved(history(stageA), stageA));
         assertDoesNotThrow(() -> SupplierPermissionMigrationRunner.verifyResolved(history(stageB), stageB));
+        var wrongDescription = history(stageA);
+        when(wrongDescription[5].getDescription()).thenReturn("unexpected description");
+        assertThrows(IllegalStateException.class, () -> SupplierPermissionMigrationRunner.verifyResolved(wrongDescription, stageA));
         var wrongChecksum = history(stageA);
         when(wrongChecksum[5].getResolvedChecksum()).thenReturn(0);
         assertThrows(IllegalStateException.class, () -> SupplierPermissionMigrationRunner.verifyResolved(wrongChecksum, stageA));
@@ -63,7 +66,7 @@ class SupplierPermissionMigrationRunnerTest {
             var entry = mock(MigrationInfo.class);
             int version = index + 1;
             when(entry.getVersion()).thenReturn(MigrationVersion.fromVersion(Integer.toString(version)));
-            when(entry.getResolvedDescription()).thenReturn(descriptions.get(index));
+            when(entry.getDescription()).thenReturn(descriptions.get(index));
             when(entry.getResolvedChecksum()).thenReturn(checksums.get(index));
             when(entry.getState()).thenReturn(version <= stage.before() ? MigrationState.SUCCESS
                     : version == stage.target() ? MigrationState.PENDING : MigrationState.ABOVE_TARGET);

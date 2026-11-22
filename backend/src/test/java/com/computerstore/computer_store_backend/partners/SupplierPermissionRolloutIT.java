@@ -1,5 +1,6 @@
 package com.computerstore.computer_store_backend.partners;
 
+import com.computerstore.computer_store_backend.operations.supplier.v1.SupplierPermissionMigrationRunner;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationState;
+import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -217,7 +220,13 @@ class SupplierPermissionRolloutIT {
             var source = mysql.dataSource(SCHEMA);
             var jdbc = new JdbcTemplate(source);
             assertEquals(5, flyway(source, "5").migrate().migrationsExecuted);
-            var resolved = flyway(source, "6").info().all();
+            var stage = ReflectionTestUtils.invokeMethod(SupplierPermissionMigrationRunner.class, "stage",
+                    (Object) new String[]{"--supplier-permission-rollout", "--confirm-target=computer_store_dev", "--stage=A"});
+            var previous = flyway(source, "5").getConfiguration().getJavaMigrations();
+            FluentConfiguration production =
+                    ReflectionTestUtils.invokeMethod(SupplierPermissionMigrationRunner.class, "configuration", stage, previous);
+            var resolved = production.dataSource(source).defaultSchema(SCHEMA).schemas(SCHEMA).load().info().all();
+            ReflectionTestUtils.invokeMethod(SupplierPermissionMigrationRunner.class, "verifyResolved", resolved, stage);
             assertEquals(7, resolved.length);
             for (int index = 0; index < 5; index++) assertEquals(MigrationState.SUCCESS, resolved[index].getState());
             assertEquals(MigrationState.PENDING, resolved[5].getState());
