@@ -16,10 +16,29 @@ Create and PUT accept `code`, `name`, `phone`, `email`, `address`, and `notes`. 
 
 ## Purchasing boundary
 
-Deactivation locks the Supplier row, checks for open DRAFT purchases, and marks the supplier inactive if none exist. Existing CONFIRMED and CANCELLED purchases remain linked. Repeated deactivation is a no-op. V1 provides no delete or reactivation endpoint. TV2 retains ownership of Purchasing. For draft creation, supplier reassignment and confirmation, Purchasing must lock the relevant Supplier row and verify it remains active inside its write transaction. Coordinate supplier/purchase lock ordering with TV2 before shared rollout. Reassign or cancel a linked draft through Purchasing before deactivation.
+Deactivation takes a write lock on the Supplier row before checking for open DRAFT purchases in a current locking read. A draft causes 409 and the supplier remains active. Existing CONFIRMED and CANCELLED purchases remain linked. Repeated deactivation is a no-op. V1 provides no delete or reactivation endpoint.
 
-## Pending permission rollout
+Purchasing owns its transactions. Draft creation, supplier reassignment, and confirmation must lock and recheck the relevant Supplier rows inside the write transaction. Lock suppliers in ascending ID order when more than one is involved, before locking Purchase and Inventory rows. If Purchasing reads a draft before acquiring those locks to learn the supplier ID, re-read the locked draft and confirm its supplier and state before writing. Stop or restart the transaction if either changed. Never treat the UI selection or an earlier nonlocking read as evidence that the supplier is still active.
 
-The matrix proposes MANAGER for all four SUPPLIER codes and WAREHOUSE_STAFF for READ only. ADMIN and SALES_STAFF receive no Supplier grants in this proposal. The immutable SQL is under `backend/src/main/resources/operations/supplier/v1`, outside normal Flyway discovery. V6 registers exactly four codes using `name=code` and null descriptions. V7 adds exactly five pairs. Both stages insert only; duplicate/conflicting baseline data requires review before running them.
+The disposable MySQL test exercised both orderings using separate JDBC transactions. A Purchasing transaction waiting behind deactivation saw the supplier become inactive. Deactivation waiting behind draft creation saw the newly committed draft. TV2 still needs to implement and verify these checks in the Purchasing use cases.
 
-V6/V7 are proposed versions to avoid the Product branch’s V4/V5. Supplier source has no Product dependency. Before making the scripts executable in a rollout, approve the matrix, establish the shared migration sequence and history, verify the target, backup and zero existing Supplier permission/grant rows, and confirm statements against disposable MySQL with strict mode and InnoDB. Register the migrations explicitly outside normal application startup, verify four permissions before applying grants, then verify five pairs before releasing the HTTP boundary. No database migration is run by this checkpoint.
+## Permission rollout readiness
+
+The matrix proposes MANAGER for `SUPPLIER_READ`, `SUPPLIER_CREATE`, `SUPPLIER_UPDATE`, and `SUPPLIER_DEACTIVATE`. WAREHOUSE_STAFF gets `SUPPLIER_READ` only. ADMIN and SALES_STAFF get zero Supplier grants. This remains a proposal.
+
+| Version | Flyway SQL checksum | Required outcome |
+|---|---:|---|
+| V6 | `-1416705504` | Four Supplier permission rows with `name=code` and null descriptions, zero Supplier grants |
+| V7 | `982398228` | Exactly the five pairs above, including zero ADMIN grants |
+
+The SQL is under `backend/src/main/resources/operations/supplier/v1`, outside normal Flyway discovery. V6 requires exactly five successful V1–V5 history entries with the expected versions and checksums, and no existing Supplier catalog rows. V7 requires the successful V6 checksum, required roles, exact compatible Supplier metadata, and zero existing Supplier grants. Both stages use a single insert statement and fail on conflicting or duplicate state. A second normal Flyway invocation skips the successful migrations.
+
+The opt-in integration test ran V1 and the actual V6/V7 SQL through Flyway on MySQL 8.0.46 in a disposable Windows instance with TCP disabled. It used test-only history markers for the released V2–V5 versions and checksums. Run from `backend` with:
+
+~~~powershell
+.\mvnw.cmd -o '-Dtest=SupplierPermissionRolloutIT' '-Dcsm.mysql.home=C:\Program Files\MySQL\MySQL Server 8.0' test
+~~~
+
+Before live rollout, obtain grant and execution approval, verify target and backup, and validate the actual V1–V5 history using an explicit Flyway runner that registers the original Category and Product Java migrations. The Supplier feature branch builds independently, but the live migration sequence depends on the released V1–V5 history. Target V6 first and read back its checksum, four rows, and zero grants. Then target V7 and read back its checksum and the exact five pairs. Stop on any mismatch.
+
+After live V7 read-back, release the five Supplier routes by changing the final argument of `buildSupplierBoundary` to `true` in the application `SecurityConfig.apiSecurityFilterChain` bean. The default remains `false`. Keep the method/path allowlist, existing authentication and CSRF settings, and service-level permission checks. Verify the branch's isolated security tests and run live smoke checks before advancing PAR-001.
