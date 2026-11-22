@@ -4,7 +4,7 @@ Ngày 2026-11-21. Branch local `feature/category-management`, base `a0718b19a6ba
 
 **Phụ thuộc Authorization Foundation:** sau fetch, origin/main còn ở `cf72b05`, là tổ tiên của ba commit `2e152a3`, `e251d0c`, `a0718b1`. Authorization chưa merge main. Branch này kế thừa foundation để phát triển slice, không merge/rebase hoặc tạo PR vào main; chỉ chuẩn bị tích hợp sau khi foundation có trong nhánh chung.
 
-**Trạng thái:** Controller/Service/DTO và isolated tests đã triển khai local; API contract dưới đây là đề xuất để review. SecurityConfig không đổi, Category vẫn bị HTTP denyAll. Không có migration, seed hoặc runtime grants mới.
+**Hiện tại — Category Integration V1 local, base ce5019d:** đúng năm routes bên dưới dùng HTTP authenticated boundary; Service vẫn enforce PermissionPolicy theo mapping server. Policy Category được chọn trong nhiệm vụ này: MANAGER bốn quyền, SALES_STAFF/WAREHOUSE_STAFF chỉ READ, không ADMIN mặc định. Chưa ghi permission/grants vào DB, chưa có executable migration hoặc E2E MySQL. Các đoạn Part 1 phía dưới là snapshot; mục 8 ghi kế hoạch tích hợp mới nhất.
 
 ## 1. Căn cứ và phạm vi
 
@@ -14,7 +14,7 @@ Ngày 2026-11-21. Branch local `feature/category-management`, base `a0718b19a6ba
 - [authorization-foundation.md](authorization-foundation.md), [permission matrix](authorization-permission-matrix.md): dùng PermissionPolicy, actor/server mapping; CATEGORY_READ/CREATE/UPDATE/DEACTIVATE đều ELIGIBLE_PROPOSED. Chưa có approval/registration/grants runtime được thực thi.
 - Không Product write, stock, Inventory/Sales, Frontend, hard delete, reactivate, PATCH, bulk, public catalog hoặc multi-store. Không sửa Entity/schema hoặc thêm cột actor vào Category vốn không có cột đó.
 
-## 2. API contract đề xuất — hiện chưa được HTTP security cho phép
+## 2. Category V1 contract — authenticated HTTP boundary, Service permission enforcement
 
 | Method / path | Service / permission | Kết quả contract |
 |---|---|---|
@@ -24,7 +24,7 @@ Ngày 2026-11-21. Branch local `feature/category-management`, base `a0718b19a6ba
 | PUT /api/v1/categories/{id} | full information update; CATEGORY_UPDATE | 200 CategoryResponse; không sửa active/createdAt |
 | POST /api/v1/categories/{id}/deactivate | deactivate; CATEGORY_DEACTIVATE | 200 CategoryResponse; không hard delete |
 
-Production hiện trả 401 cho anonymous read, 403 cho authenticated requests tới các route trên, kể cả role ADMIN/MANAGER hoặc có authorities giả lập. Mutation thiếu CSRF bị 403. Các status 200/201/400/404/409 của Controller/Service được kiểm tra bằng standalone MVC chỉ trong tests; không phải bằng chứng HTTP live API đã được mở.
+Anonymous với CSRF hợp lệ khi cần trả 401; authenticated thiếu mapping trả 403; đủ quyền server và business validation thì tới Controller/Service (200/201 hoặc lỗi nghiệp vụ). CSRF chạy trước authorization: mutation thiếu/sai CSRF trả 403, kể cả anonymous. Authorities/role do client gửi không cấp quyền. Boundary mới chỉ được kiểm tra trong MVC-only tests, chưa deploy hoặc kiểm chứng HTTP live/MySQL.
 
 List nhận q tùy chọn, active tùy chọn (bỏ qua = cả active/inactive), page mặc định 0, size mặc định 20, giới hạn 1–100; page không âm và offset không vượt Integer.MAX_VALUE. Sort cố định name ASC, id ASC, không nhận sort expression từ client.
 
@@ -80,9 +80,9 @@ CategoryRepository đọc nội bộ Product qua FK trong cùng transaction, gi�
 
 ## 5. Authorization và deployment blockers
 
-PermissionPolicy/PermissionCode/CurrentActorService/AuthorizationService, SecurityConfig, login/logout/CSRF, cookie/CORS và runtime mappings đều giữ nguyên. Có Controller không làm route được permit: mọi Category request production còn đi vào anyRequest().denyAll().
+PermissionPolicy/PermissionCode/CurrentActorService/AuthorizationService, login/logout/CSRF, cookie/CORS và runtime mappings giữ nguyên. SecurityConfig chỉ thay đúng năm Category method/path sang authenticated; mọi business route khác vẫn anyRequest().denyAll().
 
-Role mapping trong matrix vẫn là đề xuất: Manager bốn quyền, Sales/Warehouse chỉ READ, Admin không quyền Category mặc định. Không seed bốn permission, sáu grants hoặc tạo account. Việc đăng ký catalog, cấp role grants và mở HTTP endpoint là các nhiệm vụ riêng.
+Policy slice Category đã được người dùng chọn: Manager bốn quyền, Sales/Warehouse chỉ READ, Admin không quyền Category mặc định. CategoryPermissionRollout chứa đúng bốn catalog entries và sáu grant pairs để chuẩn bị rollout, không tự cấp quyền runtime. Không seed hoặc tạo account; mọi thay đổi DB cần phê duyệt thực thi riêng. Không suy rộng approval sang các mục khác của matrix.
 
 Còn cần quyết định/verification:
 1. Phê duyệt Category API/DTO/page/record visibility contract trước khi đổi route policy; chưa tự APPROVED D01–D13.
@@ -116,3 +116,53 @@ Thêm production source: catalog/controller/CategoryController.java; catalog/ser
 Sửa duy nhất CategoryRepository.java trong source hiện có. Thêm năm test classes trên và CategoryTestData fixture; thêm tài liệu này, cập nhật ghi chú/trạng thái CAT-001 trong tracker. Không sửa Product Entity/Repository, Inventory/Sales, Frontend hoặc Shared/Identity source.
 
 CAT-001 Backend/Tests/Overall TODO → IN_PROGRESS, Frontend TODO; owner TV1 giữ nguyên. Giữ 33 task IDs, 8 dependencies và mọi task/state TV2; không ghi DONE. Chưa commit/push/PR, migration, seed, DB/Flyway/bootstrap hoặc tạo ADMIN. Dừng sau Backend Part 1.
+
+## 8. Integration V1 — kiểm chứng và E2E MySQL còn pending
+
+SecurityConfig chỉ cho authenticated qua đúng 5 method/path ở mục 2; không `permitAll`
+hoặc role matcher cho Category. CurrentActorService vẫn kiểm tra EmployeePrincipal và
+user active trên server, RoleResolutionService đọc mappings, PermissionPolicy kiểm tra
+eligibility trước Category persistence. Các quyền không tự bao hàm nhau. Chưa deploy;
+DB không có grants phù hợp vẫn trả 403. Deactivate giữ 409 khi có Product references;
+không Product write, hard delete hoặc reactivate.
+
+CategorySecurityTest dùng filter/controller/service/actor/resolver/policy thật trong
+MVC-only context, chỉ mock repositories/EntityManager. Kiểm tra 5 routes, từng grant,
+role read-only, anonymous/missing grant/ADMIN/forged principal/provisional, CSRF và mọi
+route ngoài scope vẫn deny. CategoryTransactionTest và CategoryRepositoryTest giữ kiểm
+tra proxy rollback/REQUIRED và lock/query declarations; không chứng minh physical locks.
+CategoryPermissionRolloutTest kiểm tra exact A/B, metadata/hash/immutability, loại mọi
+code ngoài Category và không có migration/DB bean. Không đổi Frontend vì DTO/CSRF contract
+không thay đổi; các banner trạng thái rollout hiện có cần review khi vận hành thực tế.
+
+Kết quả isolated: **356/356 PASS**, 0 failure/error/skipped trong 28 classes chọn rõ;
+281 tests giữ nguyên + 14 CategorySecurityTest thay cho 3 denyAll tests cũ + 61 manifest
+tests mới. Bao gồm rollback/locking declaration regression, auth/login/logout/CSRF và
+9 provisional deny cases; không chọn ComputerStoreBackendApplicationTests/full Boot.
+
+E2E chỉ chạy trong nhiệm vụ DB được phép riêng, theo thứ tự:
+
+1. Xác minh local computer_store_dev, credentials qua môi trường an toàn, schema/history,
+   inventory/grants/backup/window; dừng nếu target/config không xác minh được. Không in
+   URL chứa secret/password/hash. Chốt runner/version/checksum trước khi áp A rồi B theo
+   [rollout mục 13](authorization-runtime-permission-rollout.md#13-category-v1--exact-payload-đã-chọn-execution-chưa-được-phép).
+2. Sau A/B kiểm tra exact rows/pairs và outside-scope snapshots; không tạo tài khoản hay
+   assign user_role ngầm. Cần tài khoản thật được cung cấp/ủy quyền riêng cho MANAGER,
+   SALES_STAFF, WAREHOUSE_STAFF và ADMIN không Category grant; thiếu thì báo blocked.
+3. Startup có kiểm soát: Flyway disabled, Hibernate validate, bind loopback; Vite proxy
+   session-cookie cùng origin. GET csrf, login bằng credentials được cấp, xác minh me.
+   Anonymous 401, thiếu/sai CSRF 403, thiếu grant 403; đủ grant tới use case.
+4. Manager list/detail/create/PUT/deactivate; Sales/Warehouse chỉ đọc, ADMIN không cấp
+   ngầm; các business API khác vẫn deny. Kiểm tra 400/404/duplicate 409, ID string/UTC,
+   filter/pagination, update giữ active/createdAt. Chỉ dùng record/namespace test đã duyệt.
+5. Category đang có Product: deactivate 409, active/timestamps và Product/stock giữ nguyên.
+   Không tự tạo/sửa Product để dựng fixture trên DB dùng chung; cần fixture được duyệt.
+6. Trên fixture/connections được cho phép: concurrent duplicate code, update/deactivate,
+   Product insert/reassignment vs deactivate; kiểm chứng UNIQUE extraction, physical
+   locks, lock timeout/rollback và collation. Isolated PASS không thay các bước này.
+7. Logout/CSRF rotation, session hết hạn; keyboard/native dialog focus trap, light/dark,
+   responsive/touch/zoom/screen reader. Ghi evidence và đối soát dữ liệu; cleanup phải
+   được duyệt riêng, không hard delete lịch sử hoặc restore/reset DB tự động.
+
+CAT-001 giữ cả bốn cột IN_PROGRESS đến E2E/review/merge. Không MySQL/Flyway/bootstrap,
+DB writes, accounts, runtime grants, commit/push trong nhiệm vụ chuẩn bị này.

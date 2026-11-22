@@ -1,5 +1,7 @@
 # Authorization Foundation Part 3A
 
+**Category Integration V1 local, base ce5019d:** riêng 5 Category method/path đã chuyển từ denyAll sang authenticated boundary; CategoryService vẫn gọi PermissionPolicy/actor/server mapping cho từng operation. Không có role bypass hoặc grants tự động. Health/auth/session/CSRF và denyAll của mọi business route khác giữ nguyên. Các mô tả “mọi business API denyAll” bên dưới là snapshot trước slice này; xem [Category API](category-management-api.md) và rollout mục 13. Không tự approve các policy khác hoặc cho phép thao tác DB.
+
 Ngày 2026-11-21; Part 3A trên `feature/authorization`, base `cf72b05` (Foundation PR #1 đã merge main), đã commit/push `2e152a3`, chưa review/merge Part 3A. Part 3B-2A hiện là implementation local của catalog/policy/tests được mô tả ở cuối tài liệu; không có CRUD/endpoint mới, seed hoặc permission matrix được tự phê duyệt.
 
 ## Contract cho các module

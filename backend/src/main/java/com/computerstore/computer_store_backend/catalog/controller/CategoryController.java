@@ -9,7 +9,7 @@ import java.net.URI;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-/** Proposed Category V1 contract. Production SecurityConfig still denies every route here. */
+/** Category V1: authenticated HTTP boundary; each service use case enforces PermissionPolicy. */
 @RestController
 @RequestMapping("/api/v1/categories")
 public class CategoryController {

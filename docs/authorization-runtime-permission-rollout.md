@@ -1,5 +1,7 @@
 # Runtime Permission Seed và Role Grant Rollout — Part 3B-2B
 
+**Category Integration V1 local:** mục 13 ghi subset/metadata và sáu pairs đã được người dùng chọn cho Category. R01/R02 không còn thiếu lựa chọn payload đối với slice này; phê duyệt DB execution, kiểm kê target, version/checksum/runner và recovery vẫn PENDING. Các đoạn “chưa có manifest cụ thể” bên dưới là snapshot chung trước cập nhật này; không chuyển các permissions khác thành approved.
+
 Ngày 2026-11-21; branch `feature/authorization`, HEAD `e251d0c`. Thiết kế Part 3B-2B.1 được cập nhật ở Part 3B-2B.2 với helper manifest validation/fingerprint và isolated tests. **Catalog registration/migration vẫn PROPOSED/PENDING, chưa có manifest APPROVED, chưa seed hoặc thực thi Stage A; Stage B chưa triển khai.** D01–D13 không tự được phê duyệt. Kết quả hiện tại: 29 tests mới + 220 regression = 249/249 PASS, không MySQL/Flyway; không chứng minh rollout thực tế.
 
 ## 1. Nguồn và hiện trạng đã kiểm tra
@@ -301,3 +303,56 @@ Chưa có tests thực thi migration/SQL/JDBC registration, MySQL adoption/trans
 ### 12.4. Trạng thái vận hành
 
 **Stage A chưa chạy; không có manifest APPROVED hoặc executable migration. Stage B chưa triển khai, không grants mới.** Business APIs vẫn denyAll; auth/CSRF, schema, Entity/Repository, properties/POM và Bootstrap giữ nguyên. Không tạo ADMIN hoặc sửa user_role. Task này chỉ thêm helper/test và cập nhật rollout/tracker; chưa commit/push, merge main hoặc phê duyệt D01–D13.
+
+## 13. Category V1 — exact payload đã chọn, execution chưa được phép
+
+Source chuẩn bị: `identity/authorization/registration/CategoryPermissionRollout.java`.
+Class thuần Java, immutable, không bean/runner/SQL executor/JavaMigration; không được
+dùng danh sách này làm fallback grants trong AuthorizationService hoặc PermissionPolicy.
+
+Stage A: đúng bốn codes CATEGORY_READ, CATEGORY_CREATE, CATEGORY_UPDATE,
+CATEGORY_DEACTIVATE; mỗi entry `name = code`, `description = null`.
+Canonical manifest SHA-256 (không phải Flyway checksum):
+`3c99e12abed2c665096bf3489d75d97754c9002ee7f9f8389aa96ad3aa331bf6`.
+
+Stage B: đúng sáu pairs, không mở rộng theo toàn bộ enum/matrix:
+
+```text
+MANAGER          CATEGORY_READ
+MANAGER          CATEGORY_CREATE
+MANAGER          CATEGORY_UPDATE
+MANAGER          CATEGORY_DEACTIVATE
+SALES_STAFF      CATEGORY_READ
+WAREHOUSE_STAFF  CATEGORY_READ
+```
+
+Không ADMIN, user_role/account/role mới, permission ngoài Category hoặc provisional.
+Đây là lựa chọn policy/payload của người dùng cho slice Category, không tự APPROVE
+D01–D13 hay phần còn lại của R01–R07. Stage A/B chưa thực thi; chọn manifest không
+cấp quyền DB runtime hoặc cho phép chạy migration.
+
+Phương án migration để review, **chưa tạo executable**:
+
+1. Giữ V1 nguyên trạng. Sau approval riêng, đóng băng payload A/B và SQL/validation
+   revision; chọn hai version chưa dùng sau đối chiếu main/TV2/history. Không chọn V2/V3
+   trước khi kiểm tra. Dùng hai Java versioned DML migrations theo mục 4, không DDL/JPA.
+2. Đóng gói job riêng với location explicit ngoài `classpath:db/migration` của app;
+   không ship class migration discoverable trong artifact Boot thường. Properties hiện
+   `spring.flyway.enabled=true`, nên không được chỉ thêm migration vào default location.
+   Runner/classpath/discovery/checksum cần review/test trước khi tạo và phát hành.
+3. Preflight read-only: local target computer_store_dev, history/schema/unique/FK đúng
+   V1; kiểm kê metadata bốn codes và toàn bộ Category grants. Metadata không khớp,
+   role thiếu, grants ngoài sáu pairs, aliases hoặc provisional/unknown mappings thì
+   dừng, không tự overwrite/delete/repair. Không giả định DB rỗng hoặc role IDs cố định.
+4. A chỉ insert permission thiếu, metadata khớp mới adopt/no-op; B lookup role/permission
+   bằng code và chỉ insert pair thiếu sau khi A được xác minh. Giữ IDs/timestamps cũ,
+   dùng UTC microsecond cho rows mới; verify exact set, affected rows và ngoài-scope
+   snapshots trong cùng transaction mỗi stage. B không sửa user_role/app_user.
+5. Migration đã applied phải bất biến; checksum bao gồm frozen payload/SQL/validation,
+   không đọc enum/helper mới nhất để replay lịch sử. A/B là hai transaction riêng;
+   failure trước commit rollback stage, outcome unknown thì dừng/inspect. Giữ A nếu B
+   fail, forward fix; không tự revoke grants/adopted rows hoặc repair history.
+
+Trước DB task còn cần approval riêng cho read-only inventory, A, B, runner/version/checksum,
+window/backup/recovery và các E2E writes. Chưa có lệnh migration sẵn sàng thực thi;
+không dùng `spring-boot:run` để áp rollout. Kế hoạch E2E: Category API mục 8.
