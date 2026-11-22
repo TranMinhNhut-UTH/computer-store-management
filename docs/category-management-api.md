@@ -4,7 +4,7 @@ Ngày 2026-11-21. Branch local `feature/category-management`, base `a0718b19a6ba
 
 **Phụ thuộc Authorization Foundation:** sau fetch, origin/main còn ở `cf72b05`, là tổ tiên của ba commit `2e152a3`, `e251d0c`, `a0718b1`. Authorization chưa merge main. Branch này kế thừa foundation để phát triển slice, không merge/rebase hoặc tạo PR vào main; chỉ chuẩn bị tích hợp sau khi foundation có trong nhánh chung.
 
-**Hiện tại — Category Integration V1 local, base ce5019d:** đúng năm routes bên dưới dùng HTTP authenticated boundary; Service vẫn enforce PermissionPolicy theo mapping server. Policy Category được chọn trong nhiệm vụ này: MANAGER bốn quyền, SALES_STAFF/WAREHOUSE_STAFF chỉ READ, không ADMIN mặc định. Chưa ghi permission/grants vào DB, chưa có executable migration hoặc E2E MySQL. Các đoạn Part 1 phía dưới là snapshot; mục 8 ghi kế hoạch tích hợp mới nhất.
+**Hiện tại — 2026-11-22, base 8bf5b6c:** năm routes Category dùng authenticated boundary và Service PermissionPolicy; MANAGER bốn quyền, SALES_STAFF/WAREHOUSE_STAFF chỉ READ, không ADMIN mặc định. Đã có executable source V2/V3 ngoài discovery mặc định và standalone runner opt-in, chưa thực thi migration hoặc ghi permission/grants. 388 isolated tests PASS, E2E/physical MySQL rollback còn pending. Các đoạn Part 1/Integration phía dưới là snapshot; xem rollout mục 14 cho source migration mới.
 
 ## 1. Căn cứ và phạm vi
 
