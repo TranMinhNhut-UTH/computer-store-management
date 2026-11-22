@@ -140,12 +140,27 @@ class CategorySecurityTest {
         verify(categories, times(granted == PermissionCode.CATEGORY_READ ? 0 : 1)).saveAndFlush(any());
     }
 
-    @Test void missingOrInvalidCsrfDeniesEveryMutationBeforePermissionOrPersistence() throws Exception {
+    @Test void missingCsrfDeniesEveryMutationAndInvalidCsrfDeniesCreateBeforePermissionOrPersistence() throws Exception {
         when(permissions.getResultList()).thenReturn(List.of("CATEGORY_CREATE", "CATEGORY_UPDATE", "CATEGORY_DEACTIVATE"));
         for (var operation : operations().subList(2, 5)) mvc.perform(operation.with(user(principal)))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         mvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(BODY).with(user(principal)).with(csrf().useInvalidToken()))
                 .andExpect(status().isForbidden());
+        verifyNoInteractions(categories, entities);
+    }
+
+    @Test void invalidCsrfDeniesUpdateBeforePermissionOrPersistence() throws Exception {
+        when(permissions.getResultList()).thenReturn(List.of("CATEGORY_UPDATE"));
+        mvc.perform(put(BASE + "/7").contentType(MediaType.APPLICATION_JSON).content(BODY)
+                        .with(user(principal)).with(csrf().useInvalidToken()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        verifyNoInteractions(categories, entities);
+    }
+
+    @Test void invalidCsrfDeniesDeactivateBeforePermissionOrPersistence() throws Exception {
+        when(permissions.getResultList()).thenReturn(List.of("CATEGORY_DEACTIVATE"));
+        mvc.perform(post(BASE + "/7/deactivate").with(user(principal)).with(csrf().useInvalidToken()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         verifyNoInteractions(categories, entities);
     }
 
