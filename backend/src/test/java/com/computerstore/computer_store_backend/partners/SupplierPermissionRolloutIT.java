@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationState;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 import org.junit.jupiter.api.Test;
@@ -204,6 +205,28 @@ class SupplierPermissionRolloutIT {
             Thread.sleep(30);
         }
         fail("Expected the concurrent Supplier operation to wait for the row lock");
+    }
+
+    @Test void stageAPreflightResolvesOnlyV6AsPendingWithoutApplyingSupplierSql() throws Exception {
+        String home = System.getProperty("csm.mysql.home");
+        assertNotNull(home, "Set csm.mysql.home to the installed Windows MySQL server");
+        try (var mysql = DisposableMysql.start(Path.of(home), directory)) {
+            var server = new JdbcTemplate(mysql.dataSource(""));
+            mysql.verifyTarget(server);
+            server.execute("CREATE DATABASE " + SCHEMA);
+            var source = mysql.dataSource(SCHEMA);
+            var jdbc = new JdbcTemplate(source);
+            assertEquals(5, flyway(source, "5").migrate().migrationsExecuted);
+            var resolved = flyway(source, "6").info().all();
+            assertEquals(7, resolved.length);
+            for (int index = 0; index < 5; index++) assertEquals(MigrationState.SUCCESS, resolved[index].getState());
+            assertEquals(MigrationState.PENDING, resolved[5].getState());
+            assertEquals(V6_CHECKSUM, resolved[5].getResolvedChecksum());
+            assertEquals(MigrationState.ABOVE_TARGET, resolved[6].getState());
+            assertEquals(V7_CHECKSUM, resolved[6].getResolvedChecksum());
+            assertEquals(0, count(jdbc, "permission"));
+            assertEquals(0, count(jdbc, "role_permission"));
+        }
     }
 
     private static void assertRejected(JdbcTemplate jdbc, String sql) {
