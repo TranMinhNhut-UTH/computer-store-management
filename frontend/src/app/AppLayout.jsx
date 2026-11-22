@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button.jsx'
 import { StatusBadge } from '../components/ui/StatusBadge.jsx'
 import { PageHeader } from '../components/ui/PageHeader.jsx'
 import { EmptyState } from '../components/ui/EmptyState.jsx'
-import { navigationGroups } from './navigation.js'
+import { currentDestination, navigateTo, subscribeNavigation } from './navigation.js'
 import { CategoryPage } from '../features/categories/CategoryPage.jsx'
 import './shell.css'
 import '../components/ui/ui.css'
@@ -31,12 +31,16 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
   const [tabletExpanded, setTabletExpanded] = useState(false)
   const collapsed = viewport === 'tablet' ? !tabletExpanded : desktopCollapsed
-  const [selectedId, setSelectedId] = useState('overview')
+  const current = useSyncExternalStore(subscribeNavigation, currentDestination)
+  const selectedId = current.id
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawer = useRef(null)
   const closeButton = useRef(null)
   const heading = useRef(null)
-  const current = navigationGroups.flatMap(group => group.items).find(item => item.id === selectedId)
+
+  useEffect(() => {
+    if (window.location.pathname === '/login') navigateTo('overview', true)
+  }, [])
 
   useEffect(() => {
     if (!mobile) setDrawerOpen(false)
@@ -65,7 +69,7 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   }
 
   function select(id) {
-    setSelectedId(id)
+    navigateTo(id)
     setDrawerOpen(false)
     // After dialog cleanup restores its opener, move focus to the newly selected content.
     requestAnimationFrame(() => heading.current?.focus())

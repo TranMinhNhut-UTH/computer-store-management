@@ -7,9 +7,9 @@
 .csm-sidebar-brand .brand-mark { flex-shrink: 0; }
 .csm-nav-group { margin-bottom: var(--csm-space-6); }
 .csm-nav-group > p { margin: 0 var(--csm-space-3) var(--csm-space-2); color: var(--csm-muted); font-size: var(--csm-font-xs); font-weight: 650; }
-.csm-nav-group button { display: flex; align-items: center; gap: var(--csm-space-3); text-align: left; padding: var(--csm-space-2) var(--csm-space-3); min-height: 44px; width: 100%; background: transparent; border: 1px solid transparent; }
-.csm-nav-group button:hover { background: var(--csm-hover); }
-.csm-nav-group button[aria-current=page] { background: var(--csm-primary-soft); color: var(--csm-text); border-color: var(--csm-primary); }
+.csm-nav-group a { display: flex; align-items: center; gap: var(--csm-space-3); text-align: left; padding: var(--csm-space-2) var(--csm-space-3); min-height: 44px; width: 100%; background: transparent; border: 1px solid transparent; border-radius: var(--csm-radius-control); color: inherit; text-decoration: none; }
+.csm-nav-group a:hover { background: var(--csm-hover); }
+.csm-nav-group a[aria-current=page] { background: var(--csm-primary-soft); color: var(--csm-text); border-color: var(--csm-primary); }
 .csm-nav-label { font-size: var(--csm-font-sm); font-weight: 600; }
 .csm-nav-icon { flex-shrink: 0; }
 .csm-nav-note { margin: var(--csm-space-4) var(--csm-space-3); font-size: var(--csm-font-xs); line-height: 1.6; color: var(--csm-muted); }
@@ -17,7 +17,7 @@
 .csm-shell--collapsed .csm-sidebar-brand { justify-content: center; padding-inline: 0; }
 .csm-shell--collapsed .brand-mark { width: var(--csm-space-10); height: var(--csm-space-10); font-size: var(--csm-font-xs); }
 .csm-shell--collapsed .csm-nav-group + .csm-nav-group { border-top: 1px solid var(--csm-border); padding-top: var(--csm-space-3); }
-.csm-shell--collapsed .csm-nav-group button { justify-content: center; padding-inline: 0; min-width: 44px; }
+.csm-shell--collapsed .csm-nav-group a { justify-content: center; padding-inline: 0; min-width: 44px; }
 .csm-shell-body { margin-left: var(--csm-sidebar-width); min-width: 0; }
 .csm-topbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; flex-wrap: wrap; gap: var(--csm-space-4); padding: var(--csm-space-4) var(--csm-space-8); background: var(--csm-surface); border-bottom: 1px solid var(--csm-border); }
 .csm-topbar-title { font-size: var(--csm-font-sm); font-weight: 650; }

@@ -79,16 +79,22 @@ been checked in isolated headless Chrome with mocked auth responses and no backe
 requests; see the design-system document for the checked viewports and interactions.
 Real-account login, touch devices, screen readers, zoom and other browsers remain pending.
 
-## Category Management — Frontend Part 2
+## Category Management
 
-Choose **Danh mục** in the authenticated shell to open **Quản lý danh mục**. Other
-modules retain their existing placeholders. Navigation does not grant permissions.
-The Category backend still has HTTP denyAll and no runtime grants: a real request
-currently shows a clear access-denied state, with no sample-data fallback.
+Choose **Danh mục** in the authenticated shell or open `/categories` directly.
+The session check still runs before rendering the shell. Refresh and browser
+Back/Forward restore the screen from the URL. If serving the production build
+from a static host, configure SPA fallback to `index.html` for frontend paths and
+continue routing `/api` to the backend. Other modules retain their existing
+placeholders. Category access is enforced by the backend.
 
-The page implements list/search by code or name, active/all/inactive filters, fixed
-20-item API pagination, loading/empty/error states, create/edit dialogs and confirmed
-deactivation. Edit/confirmation fetch fresh detail before enabling submission.
+Category search applies after 350 ms of idle typing or immediately on Enter.
+Status filters apply immediately, and changing or clearing filters returns to
+the first page. The fixed 20-item pagination, search and filtering run on the
+server. Dates display in Vietnamese format in `Asia/Ho_Chi_Minh`. The page handles
+loading, empty and error states. Edit and deactivate dialogs fetch fresh detail
+before enabling submission. Deactivated categories remain visible via the
+**Ngừng sử dụng** filter.
 Only code/name/description are sent; IDs remain decimal strings. Update cannot change
 active/createdAt. No delete/reactivate action is offered.
 
@@ -102,7 +108,7 @@ Native modal dialogs provide focus containment, Escape/cancel, scroll lock and f
 restoration; dismiss is disabled while saving. CSS uses existing semantic tokens for
 both themes. Tables scroll within their own region on narrow screens.
 
-Validation: 60/60 frontend tests PASS (24 regression + 36 new), using only mocked APIs;
-production build PASS. Browser render smoke checks use intercepted APIs only and do
-not prove Category E2E. Real HTTP access, approved runtime grants, successful live CRUD,
-keyboard/screen-reader/touch/zoom and cross-browser QA remain pending.
+The frontend suite uses mocked APIs. Run it with the command above. The reported
+MANAGER smoke tests cover live Category create, read, update, deactivate, search
+and status filters. Rerun those checks separately to validate this UX revision
+against the live backend.

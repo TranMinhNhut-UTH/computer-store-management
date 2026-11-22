@@ -1,5 +1,4 @@
 .category-page { min-width: 0; }
-.category-access-note { margin: 0 0 var(--csm-space-6); padding: var(--csm-space-3) var(--csm-space-4); border-left: 3px solid var(--csm-warning); color: var(--csm-warning); background: var(--csm-warning-soft); font-size: var(--csm-font-sm); line-height: 1.7; }
 .category-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .6fr) auto; gap: var(--csm-space-4); align-items: end; margin-bottom: var(--csm-space-6); }
 .category-filters input, .category-filters select, .category-dialog input, .category-dialog textarea { width: 100%; min-width: 0; }
 .category-table-region { overflow-x: auto; border: 1px solid var(--csm-border); border-radius: var(--csm-radius-control); }
@@ -11,7 +10,21 @@
 .category-table strong, .category-table small, .category-code { display: block; }
 .category-code { color: var(--csm-muted); font-weight: 500; margin-bottom: var(--csm-space-1); }
 .category-table td:nth-child(2) { white-space: pre-wrap; }
+.category-timestamps { line-height: 1.4; }
+.category-timestamps > time { display: block; font-weight: 600; }
+.category-timestamps > small { margin-top: 2px; line-height: 1.35; }
+.category-timestamps > :is(time, small) { white-space: nowrap; }
 .category-row-actions { display: flex; gap: var(--csm-space-2); flex-wrap: wrap; }
+.category-table .category-row-actions { align-items: flex-start; justify-content: flex-start; }
+.category-table .category-row-actions > .csm-button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.category-deactivate.csm-button:not(:disabled) { color: var(--csm-error); border-color: color-mix(in srgb, var(--csm-error) 68%, var(--csm-surface)); }
+.category-deactivate.csm-button:not(:disabled):hover { background: var(--csm-error-soft); }
 .category-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--csm-space-3); margin-top: var(--csm-space-4); font-size: var(--csm-font-sm); }
 .category-error { padding: var(--csm-space-6) 0; }
 .category-error h2 { font-size: var(--csm-font-lg); }

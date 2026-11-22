@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { TextInput } from '../../components/ui/TextInput.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { formatVietnameseDate } from '../../format/vietnameseDate.js'
 import { CategoryDialog } from './CategoryDialog.jsx'
 import { categoryValues, validateCategory } from './validation.js'
 import './categories.css'
@@ -15,7 +16,9 @@ export function categoryError(error, action) {
   switch (error.status) {
     case 400: return 'Dữ liệu chưa hợp lệ. Vui lòng kiểm tra các trường và giới hạn ký tự.'
     case 401: return 'Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.'
-    case 403: return 'Truy cập bị từ chối hoặc chưa được cấp quyền. Category API hiện chưa được mở; nếu phiên CSRF đã thay đổi, hãy thử lại thủ công.'
+    case 403: return action
+      ? 'Truy cập bị từ chối. Bạn có thể thiếu quyền hoặc phiên bảo mật đã thay đổi.'
+      : 'Truy cập bị từ chối. Bạn chưa được cấp quyền xem danh mục.'
     case 404: return 'Danh mục không còn tồn tại. Hãy đóng hộp thoại và tải lại danh sách.'
     case 409: return action === 'deactivate'
       ? 'Không thể ngừng sử dụng danh mục. Nếu còn sản phẩm tham chiếu, Backend hiện từ chối thao tác này; trạng thái không hợp lệ cũng có thể gây xung đột.'
@@ -25,12 +28,12 @@ export function categoryError(error, action) {
   }
 }
 const blank = { code: '', name: '', description: '' }
-const dates = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+const searchDelay = 350
 
 export function CategoryPage({ client = categoryClient }) {
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [search, setSearch] = useState('')
-  const [active, setActive] = useState('')
+  const searchTimer = useRef(null)
   const [refresh, setRefresh] = useState(0)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -54,7 +57,8 @@ export function CategoryPage({ client = categoryClient }) {
     setLoading(true); setError(null)
     client.list(query, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) {
-        if (query.page > 0 && query.page >= data.totalPages) setQuery(previous => ({ ...previous, page: Math.max(0, data.totalPages - 1) }))
+        if (query.page > 0 && query.page >= data.totalPages) setQuery(previous =>
+          previous === query ? { ...previous, page: Math.max(0, data.totalPages - 1) } : previous)
         else setResult(data)
       }
     }).catch(failure => { if (!controller.signal.aborted) setError(failure) })
@@ -62,6 +66,24 @@ export function CategoryPage({ client = categoryClient }) {
     return () => controller.abort()
   }, [client, query, refresh])
   useEffect(() => () => detailRequest.current?.abort(), [])
+  useEffect(() => () => clearTimeout(searchTimer.current), [])
+
+  function applyFilters(value, status) {
+    clearTimeout(searchTimer.current)
+    const q = value.trim()
+    setNotice('')
+    setQuery(previous => {
+      const active = status ?? previous.active
+      if (q === previous.q && active === previous.active) return previous
+      return { ...previous, q, active, page: 0 }
+    })
+  }
+
+  function changeSearch(value) {
+    setSearch(value)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => applyFilters(value), searchDelay)
+  }
 
   function close() {
     if (inFlight.current) return
@@ -111,17 +133,25 @@ export function CategoryPage({ client = categoryClient }) {
   return <div className="category-page">
     <PageHeader title="Quản lý danh mục" description="Tra cứu và quản lý thông tin danh mục sản phẩm."
       actions={<Button id="category-create" onClick={openCreate} disabled={(loading && !result) || Boolean(error)}>Tạo danh mục</Button>} />
-    <p className="category-access-note">API danh mục hiện đang chặn truy cập và chưa có runtime grants. Thao tác chỉ thực hiện khi Backend cho phép; giao diện không tự cấp quyền.</p>
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách danh mục">
       <form className="category-filters" aria-label="Tìm kiếm danh mục" onSubmit={event => {
-        event.preventDefault(); setNotice(''); setQuery({ ...query, q: search.trim(), active, page: 0 })
+        event.preventDefault()
+        applyFilters(search)
       }}>
-        <TextInput label="Tìm theo mã hoặc tên" name="q" value={search} onChange={event => setSearch(event.target.value)} maxLength={120} />
-        <div className="csm-field"><label htmlFor="category-active">Trạng thái</label><select id="category-active" value={active} onChange={event => setActive(event.target.value)}>
+        <TextInput label="Tìm theo mã hoặc tên" name="q" value={search} onChange={event => changeSearch(event.target.value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            applyFilters(event.currentTarget.value)
+          }} maxLength={120} />
+        <div className="csm-field"><label htmlFor="category-active">Trạng thái</label><select id="category-active" value={query.active} onChange={event => applyFilters(search, event.target.value)}>
           <option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option>
         </select></div>
-        <Button type="submit" variant="secondary" disabled={loading}>Tìm kiếm</Button>
+        <Button variant="secondary" disabled={!search && !query.q && !query.active} onClick={() => {
+          setSearch('')
+          applyFilters('', '')
+        }}>Đặt lại</Button>
       </form>
       {loading ? <LoadingState label="Đang tải danh mục…" /> : error ? <div className="category-error" role="alert">
         <h2>{denied ? 'Chưa thể truy cập danh mục' : 'Không tải được danh sách'}</h2><p>{categoryError(error)}</p>
@@ -132,10 +162,13 @@ export function CategoryPage({ client = categoryClient }) {
             <th scope="col">Mã / Tên danh mục</th><th scope="col">Mô tả</th><th scope="col">Trạng thái</th><th scope="col">Cập nhật / Tạo</th><th scope="col">Thao tác</th>
           </tr></thead><tbody>{result.items.map(record => <tr key={record.id}>
             <th scope="row"><span className="category-code">{record.code}</span><strong>{record.name}</strong></th>
-            <td>{record.description || '—'}</td><td><StatusBadge variant={record.active ? 'success' : 'neutral'}>{record.active ? 'Đang sử dụng' : 'Ngừng sử dụng'}</StatusBadge></td>
-            <td><time dateTime={record.updatedAt}>{dates.format(new Date(record.updatedAt))}</time><small className="csm-muted">Tạo: {dates.format(new Date(record.createdAt))}</small></td>
+            <td>{record.description || '—'}</td><td><StatusBadge variant={record.active ? 'success' : 'error'}>{record.active ? 'Đang sử dụng' : 'Ngừng sử dụng'}</StatusBadge></td>
+            <td className="category-timestamps">
+              <time dateTime={record.updatedAt}>{formatVietnameseDate(record.updatedAt, { withTime: true })}</time>
+              <small className="csm-muted">Tạo: <time dateTime={record.createdAt}>{formatVietnameseDate(record.createdAt)}</time></small>
+            </td>
             <td><div className="category-row-actions"><Button variant="secondary" onClick={() => openRecord(record, 'edit')} aria-label={`Sửa danh mục ${record.code}`}>Sửa</Button>
-              {record.active && <Button variant="ghost" onClick={() => openRecord(record, 'deactivate')} aria-label={`Ngừng sử dụng danh mục ${record.code}`}>Ngừng sử dụng</Button>}</div></td>
+              {record.active && <Button variant="secondary" className="category-deactivate" onClick={() => openRecord(record, 'deactivate')} aria-label={`Ngừng sử dụng danh mục ${record.code}`}>Ngừng sử dụng</Button>}</div></td>
           </tr>)}</tbody></table>
         </div>
       </>}
@@ -149,7 +182,7 @@ export function CategoryPage({ client = categoryClient }) {
       {detailLoading ? <LoadingState label="Đang tải thông tin danh mục…" /> : <form ref={form} noValidate onSubmit={submit} aria-busy={busy} aria-describedby={modalError ? 'category-modal-error' : undefined}>
         {modalError && <p id="category-modal-error" role="alert" className="message message-error">{categoryError(modalError, modal.action)}</p>}
         {/* Failed detail reads must never submit stale list data. */}
-        {(modal.action === 'create' || detailReady) && (modal.action === 'deactivate' ? <p>Ngừng sử dụng <strong>{modal.record.name}</strong> ({modal.record.code})? Danh mục sẽ được đánh dấu không hoạt động, không bị xóa. Nếu có sản phẩm tham chiếu, Backend hiện từ chối thao tác với lỗi 409.</p> : <fieldset disabled={busy}>
+        {(modal.action === 'create' || detailReady) && (modal.action === 'deactivate' ? <p>Ngừng sử dụng <strong>{modal.record.name}</strong> ({modal.record.code})? Danh mục sẽ ngừng sử dụng nhưng không bị xóa khỏi hệ thống. Bạn vẫn có thể xem lại bằng bộ lọc Ngừng sử dụng.</p> : <fieldset disabled={busy}>
           <TextInput data-initial-focus label="Mã danh mục" name="code" value={values.code} required error={fields.code} hint="Tối đa 50 ký tự: A–Z, số, dấu chấm, gạch dưới hoặc gạch ngang." onChange={event => setValues({ ...values, code: event.target.value })} />
           <TextInput label="Tên danh mục" name="name" value={values.name} required error={fields.name} hint="Tối đa 120 ký tự." onChange={event => setValues({ ...values, name: event.target.value })} />
           <div className="csm-field"><label htmlFor="category-description">Mô tả</label><textarea id="category-description" name="description" rows={4} value={values.description} onChange={event => setValues({ ...values, description: event.target.value })} aria-invalid={Boolean(fields.description) || undefined} aria-describedby="category-description-help" />

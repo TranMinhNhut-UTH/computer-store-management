@@ -48,6 +48,7 @@ before(async () => {
 })
 beforeEach(() => {
   requests = []
+  window.history.replaceState(null, '', '/')
   authenticated = false
   viewportWidth = 1440
   mediaQueries.clear()
@@ -73,12 +74,49 @@ async function resizeViewport(width) {
   })
 }
 
-test('anonymous renders Login only; a URL fragment cannot bypass auth', async () => {
-  window.location.hash = '#inventory'
+test('anonymous direct Category URL renders Login without requesting categories', async () => {
+  window.history.replaceState(null, '', '/categories')
   await render()
   assert.ok(container.querySelector('#username'))
   assert.equal(container.querySelector('[data-app-shell]'), null)
   assert.equal(requests.some(request => !/\/auth\/(me|csrf)$/.test(request.url)), false)
+  assert.equal(window.location.pathname, '/categories')
+})
+
+test('direct Category URL and a fresh mount both restore Category after the session check', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/categories')
+  await render()
+  await act(async () => { root.unmount() })
+  root = createRoot(container)
+  await render()
+  assert.equal(window.location.pathname, '/categories')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'categories')
+  assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 2)
+})
+
+test('Category links update the URL and browser Back and Forward restore the selected screen', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/dashboard')
+  await render()
+  const link = container.querySelector('[data-nav-id="categories"]')
+  assert.equal(link.getAttribute('href'), '/categories')
+  await click(link)
+  assert.equal(window.location.pathname, '/categories')
+  async function travel(direction) {
+    await act(async () => {
+      const changed = new Promise(resolve => window.addEventListener('popstate', resolve, { once: true }))
+      window.history[direction]()
+      await changed
+    })
+  }
+  await travel('back')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'overview')
+  assert.equal(container.querySelector('.category-page'), null)
+  await travel('forward')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'categories')
+  assert.ok(container.querySelector('.category-page'))
 })
 
 test('me-confirmed user sees shell and navigation changes only coming-soon content', async () => {
@@ -108,12 +146,13 @@ test('theme toggles persist across shell navigation', async () => {
   assert.equal(document.documentElement.dataset.theme, 'light')
 })
 
-test('Category navigation is behind me, handles denyAll without fake data and preserves theme/logout', async () => {
+test('Category navigation is behind me, handles 403 without fake data and preserves theme/logout', async () => {
   authenticated = true
   await render()
   await click(container.querySelector('aside [data-nav-id="categories"]'))
   assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
   assert.match(container.querySelector('.category-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.doesNotMatch(container.querySelector('.category-page').textContent, /runtime grants|API hiện chưa được mở/)
   assert.equal(container.querySelector('table'), null)
   assert.equal(requests.filter(request => request.url.startsWith('/api/v1/categories')).length, 1)
   await click(container.querySelector('.theme-toggle'))

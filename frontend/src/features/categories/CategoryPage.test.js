@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname, basename, resolve } from 'node:path'
 
 let dom, server, CategoryPage, root, container, client, calls, createRoot, cacheDir
-const record = { id: '9007199254740993', code: 'CPU', name: 'Bộ xử lý', description: 'Mô tả CPU', active: true, createdAt: '2026-11-21T01:00:00Z', updatedAt: '2026-11-21T02:00:00Z' }
+const record = { id: '9007199254740993', code: 'CPU', name: 'Bộ xử lý', description: 'Mô tả CPU', active: true, createdAt: '2026-11-21T17:00:00Z', updatedAt: '2026-11-22T06:45:00Z' }
 const page = { items: [record], page: 0, size: 20, totalElements: 1, totalPages: 1 }
 const wait = () => new Promise(resolve => setTimeout(resolve, 15))
 before(async () => {
@@ -56,6 +56,18 @@ async function change(element, value) {
   })
 }
 const button = text => [...container.querySelectorAll('button')].find(element => element.textContent === text)
+const searchBox = () => container.querySelector('[name=q]')
+const statusFilter = () => container.querySelector('#category-active')
+const listCalls = () => calls.filter(([method]) => method === 'list').map(([, query]) => query)
+async function enterSearch() {
+  await act(async () => {
+    searchBox().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await wait()
+  })
+}
+async function settleDebounce() {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 385)) })
+}
 async function validForm() {
   await change(container.querySelector('[name=code]'), ' cpu ')
   await change(container.querySelector('[name=name]'), ' Bộ xử lý ')
@@ -65,19 +77,77 @@ test('renders real list DTO, statuses and dates without client role inference or
   await render()
   assert.equal(container.querySelector('h1').textContent, 'Quản lý danh mục')
   assert.match(container.querySelector('tbody').textContent, /CPU.*Bộ xử lý.*Mô tả CPU.*Đang sử dụng/s)
-  assert.equal(container.querySelectorAll('time').length, 1)
+  assert.deepEqual([...container.querySelectorAll('time')].map(time => [time.textContent, time.dateTime]), [
+    ['13:45 22/11/2026', record.updatedAt], ['22/11/2026', record.createdAt],
+  ])
+  assert.equal(container.querySelector('.csm-badge--success').textContent, 'Đang sử dụng')
+  assert.equal(container.querySelector('.category-access-note'), null)
+  assert.doesNotMatch(container.textContent, /runtime grants/)
   assert.match(container.querySelector('nav').textContent, /1 danh mục/)
   assert.equal(button('Trang sau').disabled, true)
 })
-test('search, active filter and pagination send API page parameters and reset page on search', async () => {
+test('auto-search debounces typing, trims the query and resets pagination', async () => {
   client.list = async query => { calls.push(['list', query]); return { ...page, page: query.page, totalElements: 41, totalPages: 3 } }
   await render(); await click(button('Trang sau'))
-  assert.equal(calls.at(-1)[1].page, 1)
-  await change(container.querySelector('[name=q]'), 'CPU')
-  await change(container.querySelector('#category-active'), 'false')
-  await click(button('Tìm kiếm'))
-  assert.deepEqual(calls.at(-1)[1], { q: 'CPU', active: 'false', page: 0, size: 20 })
+  assert.equal(listCalls().at(-1).page, 1)
+  await change(searchBox(), 'C')
+  await change(searchBox(), ' CP')
+  await change(searchBox(), ' CPU ')
+  assert.equal(listCalls().length, 2)
+  await settleDebounce()
+  assert.equal(listCalls().length, 3)
+  assert.deepEqual(listCalls().at(-1), { q: 'CPU', active: '', page: 0, size: 20 })
   assert.equal(button('Trang trước').disabled, true)
+})
+test('Enter immediately applies the query and cancels the pending duplicate request', async () => {
+  await render()
+  await change(searchBox(), 'CPU')
+  assert.equal(listCalls().length, 1)
+  await enterSearch()
+  assert.equal(listCalls().at(-1).q, 'CPU')
+  await enterSearch()
+  await settleDebounce()
+  assert.equal(listCalls().length, 2)
+})
+test('status applies immediately with pending search text, resets pagination and can be cleared', async () => {
+  client.list = async query => { calls.push(['list', query]); return { ...page, page: query.page, totalElements: 41, totalPages: 3 } }
+  await render()
+  await click(button('Trang sau'))
+  await change(searchBox(), 'CPU')
+  await change(statusFilter(), 'false')
+  assert.deepEqual(listCalls().at(-1), { q: 'CPU', active: 'false', page: 0, size: 20 })
+  assert.equal(listCalls().length, 3)
+  await settleDebounce()
+  assert.equal(listCalls().length, 3)
+  await change(statusFilter(), 'true')
+  assert.deepEqual(listCalls().at(-1), { q: 'CPU', active: 'true', page: 0, size: 20 })
+  await click(button('Đặt lại'))
+  assert.deepEqual(listCalls().at(-1), { q: '', active: '', page: 0, size: 20 })
+  assert.equal(searchBox().value, '')
+  assert.equal(statusFilter().value, '')
+})
+test('superseded list requests cannot display stale results or errors even if the client ignores abort', async () => {
+  const requests = []
+  client.list = (query, { signal }) => new Promise((resolve, reject) => {
+    requests.push({ query, signal, resolve, reject })
+  })
+  await render()
+  await change(statusFilter(), 'false')
+  await change(searchBox(), 'new')
+  await enterSearch()
+  assert.equal(requests.length, 3)
+  assert.equal(requests[0].signal.aborted, true)
+  assert.equal(requests[1].signal.aborted, true)
+  await act(async () => {
+    requests[0].resolve(page)
+    requests[1].reject({ status: 403 })
+  })
+  assert.match(container.textContent, /Đang tải danh mục/)
+  assert.equal(container.querySelector('table, [role=alert]'), null)
+  await act(async () => {
+    requests[2].resolve({ ...page, items: [{ ...record, name: 'Kết quả mới' }] })
+  })
+  assert.match(container.querySelector('tbody').textContent, /Kết quả mới/)
 })
 test('loading contains no data; empty response displays honest empty state', async () => {
   let finish
@@ -139,9 +209,14 @@ test('detail 404 never allows stale list data to be submitted', async () => {
   assert.equal(calls.some(call => call[0] === 'update'), false)
 })
 test('deactivate requires explicit confirm; cancel writes nothing and restores focus', async () => {
-  await render(); const opener = button('Ngừng sử dụng'); opener.focus(); await click(opener)
+  await render(); const opener = button('Ngừng sử dụng')
+  assert.equal(opener.type, 'button')
+  assert.ok(opener.classList.contains('category-deactivate'))
+  assert.ok(opener.classList.contains('csm-button--secondary'))
+  opener.focus(); await click(opener)
   assert.equal(document.activeElement, button('Hủy'))
   assert.match(container.querySelector('dialog').textContent, /không bị xóa/)
+  assert.match(container.querySelector('dialog').textContent, /bộ lọc Ngừng sử dụng/)
   assert.equal(calls.some(call => call[0] === 'deactivate'), false)
   await click(button('Hủy'))
   assert.equal(document.activeElement, opener)
@@ -182,6 +257,7 @@ test('inactive rows offer edit but never hard delete or reactivate', async () =>
   client.list = async () => ({ ...page, items: [{ ...record, active: false }] })
   await render()
   assert.ok(button('Sửa')); assert.equal(button('Ngừng sử dụng'), undefined)
+  assert.equal(container.querySelector('.csm-badge--error').textContent, 'Ngừng sử dụng')
   assert.equal(/Xóa|Kích hoạt lại/.test(container.textContent), false)
 })
 

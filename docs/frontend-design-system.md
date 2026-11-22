@@ -155,3 +155,20 @@ không đưa fixture vào runtime. Browser render smoke với API intercept khô
 E2E thật; keyboard/native focus trap, thiết bị cảm ứng, screen reader, zoom/contrast
 từng màn hình và cross-browser còn pending. HTTP Category vẫn denyAll; grants và
 contract approval còn pending. Không sửa Backend/DB hoặc tự đánh dấu CAT-001 DONE.
+
+## Quy ước bảng và ngày giờ — Category UX V1
+
+- Thao tác trong ô bảng dùng nút có viền, cao tối thiểu 36 px, đệm ngang 12 px,
+  bo góc 8 px và cách nhau 8 px. Căn đầu ô, giữ độ rộng theo nhãn và tránh ngắt
+  chữ trong nút. Đặt các nút cùng hàng khi đủ chỗ. Khi hẹp, cho phép xuống hàng
+  theo từng nút và giữ vùng cuộn ngang riêng của bảng.
+- Dùng viền trung tính cho **Sửa** và viền đỏ dịu theo token lỗi cho
+  **Ngừng sử dụng**. Giữ hover, focus-visible và trạng thái disabled của nút
+  HTML. Danh mục đã ngừng sử dụng chỉ hiển thị **Sửa**.
+- Badge **Đang sử dụng** dùng token `success` với nền dịu. Badge **Ngừng sử dụng**
+  dùng token `error` với nền đỏ dịu. Giữ nhãn trạng thái rõ ràng và kiểm tra
+  tương phản chữ trên cả giao diện sáng và tối.
+- Hiển thị ngày theo `dd/MM/yyyy` và ngày giờ theo `HH:mm dd/MM/yyyy` ở múi giờ
+  `Asia/Ho_Chi_Minh`. Dùng formatter hiển thị chung `formatVietnameseDate` và
+  giữ timestamp gốc trong thuộc tính `dateTime`. Khi hiển thị cùng ô, đặt giờ
+  cập nhật ở dòng chính, ngày tạo ở dòng phụ.
