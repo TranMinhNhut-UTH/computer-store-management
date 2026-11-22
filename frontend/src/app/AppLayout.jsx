@@ -10,10 +10,11 @@ import { currentDestination, navigateTo, subscribeNavigation } from './navigatio
 import { CategoryPage } from '../features/categories/CategoryPage.jsx'
 import { ProductPage } from '../features/products/ProductPage.jsx'
 import { SupplierPage } from '../features/suppliers/SupplierPage.jsx'
+import { CustomerPage } from '../features/customers/CustomerPage.jsx'
 import './shell.css'
 import '../components/ui/ui.css'
 
-const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage }
+const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage }
 
 const tabletQuery = '(min-width: 768px)'
 const desktopQuery = '(min-width: 1024px)'

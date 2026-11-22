@@ -290,7 +290,7 @@ class SupplierPermissionRolloutIT {
         V5__grant_product_permissions() { super(155246154); }
     }
 
-    private record DisposableMysql(Process process, Path data, String pipe) implements AutoCloseable {
+    record DisposableMysql(Process process, Path data, String pipe) implements AutoCloseable {
         static DisposableMysql start(Path home, Path directory) throws Exception {
             Path data = Files.createDirectory(directory.resolve("data"));
             Path initLog = directory.resolve("initialize.log");
@@ -332,7 +332,7 @@ class SupplierPermissionRolloutIT {
         }
 
         MysqlDataSource dataSource(String schema) {
-            assertTrue(schema.isEmpty() || SCHEMA.equals(schema));
+            assertTrue(schema.isEmpty() || SCHEMA.equals(schema) || "csm_customer_rollout_it".equals(schema));
             var source = new MysqlDataSource();
             String pipePath = URLEncoder.encode("\\\\.\\pipe\\" + pipe, StandardCharsets.UTF_8);
             source.setURL("jdbc:mysql://127.0.0.1/" + schema

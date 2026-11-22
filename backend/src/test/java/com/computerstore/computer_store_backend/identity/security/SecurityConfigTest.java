@@ -82,6 +82,14 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.detail").value("Access is denied."));
     }
 
+    @Test void unreleasedCustomerRoutesAreDeniedEvenForAuthenticatedSales() throws Exception {
+        String base = "/api/v1/customers";
+        for (var request : List.of(get(base), get(base + "/7"), post(base), put(base + "/7"))) {
+            mvc.perform(request.with(user("fixture").roles("SALES_STAFF")).with(csrf()))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
     @Test void missingCsrfIsRejectedBeforePublicOrProtectedEndpoint() throws Exception {
         for (String path : List.of("/api/health", "/api/private")) {
             for (HttpMethod method : List.of(HttpMethod.POST, HttpMethod.PATCH, HttpMethod.DELETE)) {
