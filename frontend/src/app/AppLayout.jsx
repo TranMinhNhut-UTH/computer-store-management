@@ -8,6 +8,7 @@ import { PageHeader } from '../components/ui/PageHeader.jsx'
 import { EmptyState } from '../components/ui/EmptyState.jsx'
 import { currentDestination, navigateTo, subscribeNavigation } from './navigation.js'
 import { CategoryPage } from '../features/categories/CategoryPage.jsx'
+import { ProductPage } from '../features/products/ProductPage.jsx'
 import './shell.css'
 import '../components/ui/ui.css'
 
@@ -84,7 +85,7 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
     <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} />
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">
         {error && <div className="message message-error" role="alert">{error}</div>}{notice && <p className="message message-success" role="status">{notice}</p>}
-        {selectedId === 'categories' ? <CategoryPage /> : <>
+        {selectedId === 'categories' ? <CategoryPage /> : selectedId === 'products' ? <ProductPage /> : <>
           <PageHeader title={current.label} description="Không gian chức năng của Computer Store Management." actions={<StatusBadge>Chưa triển khai</StatusBadge>} />
           <Card aria-label={current.label}><EmptyState title="Chức năng chưa triển khai" description={`Mục ${current.label} hiện chỉ dùng để điều hướng. Chưa có dữ liệu hoặc thao tác nghiệp vụ.`} /></Card>
         </>}
