@@ -1,6 +1,6 @@
 # Product Management V1 — CAT-002
 
-The controller and service contract below is covered by isolated tests. The HTTP security configuration still denies all Product routes in the running application pending approval and deployment of the Product grants. The signed-in shell exposes `/products`, reports real 401/403 responses, and disables write actions. The create form is a preview and never submits while DEP-001 is open.
+The controller and service contract below is covered by isolated tests. The HTTP security configuration still denies all Product routes until the approved grants are deployed and an explicit route release is made. The signed-in shell exposes `/products`, reports real 401/403 responses, and disables write actions. The create form is a preview and never submits while DEP-001 is open.
 
 | Method and path | Server permission | Behavior when released |
 |---|---|---|
@@ -15,26 +15,20 @@ The controller and service contract below is covered by isolated tests. The HTTP
 
 Invalid payloads or unsupported write fields return 400. Missing Product or Category returns 404. Duplicate SKU and inactive target Category return 409. Writes are transactional. Information changes lock the target Category before the Product to coordinate with Category deactivation. CSRF and session authentication remain in force. Physical locking under concurrent Product and Category writes has not been verified.
 
-## Product permission rollout readiness
+## Approved Product permission rollout V1
 
-All five `PRODUCT_*` codes above match the source catalog and are `ELIGIBLE_PROPOSED`. Registration and grants are still unapproved. The immutable, review-only source preserves the seven pairs supported by the current permission matrix. It rejects unknown or duplicate role codes, incomplete registration, unknown Product permissions, conflicting metadata and duplicate or unexpected Product mappings. It only returns missing rows to review and never writes them.
+Approval applies to this five-code subset and these seven pairs. It does not change the meaning of the global catalog status or approve other slices.
 
-| Role | Proposed in the existing matrix | Additional request held for decision |
-|---|---|---|
-| MANAGER | READ, CREATE, UPDATE, PRICE_UPDATE, DEACTIVATE | None |
-| SALES_STAFF | READ | None |
-| WAREHOUSE_STAFF | READ | CREATE and UPDATE differ from the matrix and are excluded from the prepared payload. |
-| ADMIN | None | None |
+| Role | Approved Product permissions |
+|---|---|
+| MANAGER | `PRODUCT_READ`, `PRODUCT_CREATE`, `PRODUCT_UPDATE`, `PRODUCT_PRICE_UPDATE`, `PRODUCT_DEACTIVATE` |
+| SALES_STAFF | `PRODUCT_READ` |
+| WAREHOUSE_STAFF | `PRODUCT_READ` |
+| ADMIN | None |
 
-Confirm the Product read projection and the two disputed warehouse grants explicitly. Initial pricing still requires both `PRODUCT_CREATE` and `PRODUCT_PRICE_UPDATE`. Approval of warehouse CREATE alone would leave this create command denied. Even an authorized MANAGER cannot create a Product before DEP-001 is integrated.
+Warehouse CREATE and UPDATE have been withdrawn. Initial pricing requires both `PRODUCT_CREATE` and `PRODUCT_PRICE_UPDATE`. Even an authorized MANAGER cannot create a Product before DEP-001 is integrated.
 
-**Stage A draft (V4):** Exactly the five Product permissions, with `name=code` and `description=NULL`. The manifest SHA-256 is
-`f7f1eb15a362171740a64ac2ff1fe9b7732c0f13b6d8d2f132d109b05873b6af`.
-This is a content fingerprint for review. Flyway versions and checksums will be set when the executable artifacts are approved.
-
-**Stage B draft (V5):** Insert only the exact approved Product role/code pairs after successful registration. V4/V5 are the next candidates based on the inspected Product, main and Inventory branch sources. Recheck live Flyway history, V1–V3 success/checksums and version collisions before implementation and deployment. Category V2/V3 stay frozen. A future manual runner must account for their applied history during Flyway validation and require them to be applied already. Once Product rows or later versions exist, the current Category runner's strict Category-only preflight will reject them, so do not rerun it as part of Product rollout.
-
-After explicit approval, package future migrations outside default Spring Boot discovery. Use the Category runner's opt-in pattern and freeze each version independently of the live permission catalog. In each stage, verify the target and InnoDB tables, lock and compare the relevant rows in one transaction, preserve compatible rows, and rely on the UNIQUE/FK constraints as the final guard. Unrelated permissions and mappings stay outside the Product write set. A failed precondition or insert aborts the entire stage. No executable V4/V5 or Product runner ships in this checkpoint.
+V4 registers the five codes with `name=code` and `description=NULL`. V5 inserts the seven approved pairs. They are compiled as opt-in Java migrations outside normal discovery and have not been executed. See the [Product rollout runbook](authorization-runtime-permission-rollout.md#15-product-permission-rollout-v1-v4v5) for exact commands, history requirements, and postchecks.
 
 **HTTP activation:** The exact six method/path combinations are exercised with the real filter chain and service guards in an isolated candidate configuration. The application builds that same filter chain with Product activation disabled. A reviewed release change is required after grants are approved and applied. Default denial of other APIs and CSRF behavior remain unchanged.
 

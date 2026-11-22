@@ -13,15 +13,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ProductPermissionRolloutTest {
     private static final List<String> ROLES = List.of("ADMIN", "MANAGER", "SALES_STAFF", "WAREHOUSE_STAFF");
-    private final List<Entry> catalog = ProductPermissionRollout.proposedRegistration().entries();
-    private final List<Grant> grants = ProductPermissionRollout.baselineGrantProposals();
+    private final List<Entry> catalog = ProductPermissionRollout.approvedRegistration().entries();
+    private final List<Grant> grants = ProductPermissionRollout.approvedGrants();
 
     @Test void registrationPayloadAndFingerprintAreFrozen() {
         assertEquals(List.of("PRODUCT_CREATE", "PRODUCT_DEACTIVATE", "PRODUCT_PRICE_UPDATE",
                 "PRODUCT_READ", "PRODUCT_UPDATE"), catalog.stream().map(Entry::code).toList());
         assertTrue(catalog.stream().allMatch(entry -> entry.code().equals(entry.name()) && entry.description() == null));
         assertEquals("f7f1eb15a362171740a64ac2ff1fe9b7732c0f13b6d8d2f132d109b05873b6af",
-                ProductPermissionRollout.proposedRegistration().contentSha256());
+                ProductPermissionRollout.approvedRegistration().contentSha256());
         for (Entry entry : catalog) {
             var code = PermissionCode.fromCode(entry.code()).orElseThrow();
             assertEquals(PermissionCode.Module.PRODUCT, code.module());
@@ -31,7 +31,7 @@ class ProductPermissionRolloutTest {
         assertThrows(UnsupportedOperationException.class, () -> grants.clear());
     }
 
-    @Test void exactBaselineProposalsExcludeWarehouseWriteDriftAndAdmin() {
+    @Test void exactApprovedGrantsExcludeWarehouseWritesAndAdmin() {
         assertEquals(7, grants.size());
         assertEquals(Set.of(new Grant(MANAGER, PRODUCT_READ), new Grant(MANAGER, PRODUCT_CREATE),
                 new Grant(MANAGER, PRODUCT_UPDATE), new Grant(MANAGER, PRODUCT_PRICE_UPDATE),

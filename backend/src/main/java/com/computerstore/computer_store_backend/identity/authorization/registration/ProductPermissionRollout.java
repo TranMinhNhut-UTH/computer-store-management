@@ -13,7 +13,7 @@ import java.util.Set;
 import static com.computerstore.computer_store_backend.identity.authorization.EmployeeRole.*;
 import static com.computerstore.computer_store_backend.identity.authorization.PermissionCode.*;
 
-/** Review-only Product payload and reconciliation. No beans, runner, JDBC or Flyway migration. */
+/** Approved Product policy and read-only planning. Applied migrations own their frozen snapshots. */
 public final class ProductPermissionRollout {
     private ProductPermissionRollout() { }
 
@@ -22,7 +22,7 @@ public final class ProductPermissionRollout {
             if (role == null || permission == null || permission.module() != PermissionCode.Module.PRODUCT
                     || permission.status() != PermissionCode.Status.ELIGIBLE_PROPOSED
                     || role == ADMIN || (role != MANAGER && permission != PRODUCT_READ)) {
-                throw invalid("Grant is outside the Product matrix baseline.");
+                throw invalid("Grant is outside the approved Product matrix.");
             }
         }
     }
@@ -44,8 +44,8 @@ public final class ProductPermissionRollout {
             new Grant(SALES_STAFF, PRODUCT_READ),
             new Grant(WAREHOUSE_STAFF, PRODUCT_READ));
 
-    public static PermissionCatalogManifest proposedRegistration() { return STAGE_A; }
-    public static List<Grant> baselineGrantProposals() { return STAGE_B; }
+    public static PermissionCatalogManifest approvedRegistration() { return STAGE_A; }
+    public static List<Grant> approvedGrants() { return STAGE_B; }
 
     /** Existing rows must be scoped to Product; unrelated module rows are outside this review. */
     public static List<Entry> missingRegistration(List<Entry> existingProductRows) {
@@ -61,7 +61,7 @@ public final class ProductPermissionRollout {
         return STAGE_A.entries().stream().filter(entry -> !existing.containsKey(entry.code())).toList();
     }
 
-    /** Read-only preflight for the baseline proposal, never a grant approval. */
+    /** Read-only preflight for the approved matrix. No database writes. */
     public static List<Grant> missingGrants(List<String> roleCodes, List<Entry> existingProductRows,
             List<Grant> existingProductGrants) {
         var roles = EnumSet.noneOf(EmployeeRole.class);

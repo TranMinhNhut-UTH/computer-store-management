@@ -101,9 +101,9 @@ class ProductRouteReadinessTest {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
 
-    private void proposal(EmployeeRole role) {
+    private void approvedGrants(EmployeeRole role) {
         when(roleQuery.getResultList()).thenReturn(List.of(role.name()));
-        when(permissionQuery.getResultList()).thenReturn(ProductPermissionRollout.baselineGrantProposals().stream()
+        when(permissionQuery.getResultList()).thenReturn(ProductPermissionRollout.approvedGrants().stream()
                 .filter(grant -> grant.role() == role).map(grant -> grant.permission().code()).toList());
     }
 
@@ -128,8 +128,8 @@ class ProductRouteReadinessTest {
     }
 
     @ParameterizedTest @EnumSource(value = EmployeeRole.class, names = {"SALES_STAFF", "WAREHOUSE_STAFF"})
-    void baselineStaffProposalsCanReadButNeverMutate(EmployeeRole role) throws Exception {
-        proposal(role);
+    void staffCanReadButNeverMutate(EmployeeRole role) throws Exception {
+        approvedGrants(role);
         for (var read : List.of(get(BASE), get(BASE + "/1"))) {
             mvc.perform(read.with(user(PRINCIPAL))).andExpect(status().isOk());
         }
@@ -149,8 +149,8 @@ class ProductRouteReadinessTest {
         verifyNoInteractions(products, categories);
     }
 
-    @Test void managerProposalReachesAllOperationsButCreateDoesNotWriteWithoutInventory() throws Exception {
-        proposal(EmployeeRole.MANAGER);
+    @Test void managerReachesAllOperationsButCreateDoesNotWriteWithoutInventory() throws Exception {
+        approvedGrants(EmployeeRole.MANAGER);
         mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value("1"));
         mvc.perform(get(BASE + "/1").with(user(PRINCIPAL))).andExpect(status().isOk());
@@ -178,7 +178,7 @@ class ProductRouteReadinessTest {
     }
 
     @Test void missingAndInvalidCsrfDenyEveryMutationBeforeActorOrPersistence() throws Exception {
-        proposal(EmployeeRole.MANAGER);
+        approvedGrants(EmployeeRole.MANAGER);
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL))).andExpect(status().isForbidden());
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL)).with(csrf().useInvalidToken()))
                 .andExpect(status().isForbidden());
@@ -186,7 +186,7 @@ class ProductRouteReadinessTest {
     }
 
     @Test void candidateDoesNotOpenUnlistedRoutes() throws Exception {
-        proposal(EmployeeRole.MANAGER);
+        approvedGrants(EmployeeRole.MANAGER);
         for (var request : List.of(delete(BASE + "/1"), patch(BASE + "/1"), post(BASE + "/1/reactivate"),
                 get(BASE + "/1/price"), get("/api/v1/inventory"), get("/api/v1/suppliers"))) {
             mvc.perform(request.with(user(PRINCIPAL)).with(csrf())).andExpect(status().isForbidden());
