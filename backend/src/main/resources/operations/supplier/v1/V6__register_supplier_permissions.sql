@@ -1,0 +1,6 @@
+-- Proposed Supplier catalog V1. Use only after version, target, and rollout approval.
+INSERT INTO permission (code, name, description, created_at, updated_at) VALUES
+  ('SUPPLIER_READ', 'SUPPLIER_READ', NULL, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+  ('SUPPLIER_CREATE', 'SUPPLIER_CREATE', NULL, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+  ('SUPPLIER_UPDATE', 'SUPPLIER_UPDATE', NULL, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),
+  ('SUPPLIER_DEACTIVATE', 'SUPPLIER_DEACTIVATE', NULL, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));

@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 // Shared transport: browser-managed cookies, no secrets in storage or raw server details in errors.
-export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis)) {
+export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis), acceptedFields = ['code', 'name', 'description']) {
   return async function request(path, options = {}) {
     let response
     try {
@@ -24,7 +24,7 @@ export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalTh
     if (!response.ok) {
       const problem = await response.json().catch(() => null)
       const fields = Array.isArray(problem?.fieldErrors)
-        ? problem.fieldErrors.map(item => item?.field).filter(field => ['code', 'name', 'description'].includes(field)) : []
+        ? problem.fieldErrors.map(item => item?.field).filter(field => acceptedFields.includes(field)) : []
       throw new ApiError(response.status, typeof problem?.code === 'string' ? problem.code : '', fields)
     }
     if (response.status === 204) return null

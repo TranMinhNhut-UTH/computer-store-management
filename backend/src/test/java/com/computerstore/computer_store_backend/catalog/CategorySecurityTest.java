@@ -193,7 +193,9 @@ class CategorySecurityTest {
         when(permissions.getResultList()).thenReturn(List.of("CATEGORY_READ", "CATEGORY_CREATE", "CATEGORY_UPDATE", "CATEGORY_DEACTIVATE"));
         for (var request : List.of(delete(BASE + "/7"), patch(BASE + "/7"), post(BASE + "/7/reactivate"),
                 get(BASE + "/7/deactivate"), get(BASE + "/7/products"), post(BASE + "/bulk"),
-                put(BASE), head(BASE), options(BASE), get("/api/v1/products"), get("/api/v1/inventory"), post("/api/v1/sales"))) {
+                put(BASE), head(BASE), options(BASE), get("/api/v1/products"), get("/api/v1/inventory"), post("/api/v1/sales"),
+                get("/api/v1/suppliers"), get("/api/v1/suppliers/7"), post("/api/v1/suppliers"),
+                put("/api/v1/suppliers/7"), post("/api/v1/suppliers/7/deactivate"))) {
             mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
         }
         verifyNoInteractions(categories, entities);
