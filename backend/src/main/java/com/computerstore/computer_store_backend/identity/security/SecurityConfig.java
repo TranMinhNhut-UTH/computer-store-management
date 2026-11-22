@@ -31,8 +31,17 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
+        // Product activation requires a reviewed release change. No property or profile can enable it.
+        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, false);
+    }
+
+    SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
+            ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
+            SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
+            XorCsrfTokenRequestAttributeHandler csrfHandler, boolean productRoutesReleased) throws Exception {
         return http
-                .authorizeHttpRequests(authorize -> authorize
+                .authorizeHttpRequests(authorize -> {
+                    authorize
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
@@ -42,8 +51,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/{id}").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/categories").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/categories/{id}").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/categories/{id}/deactivate").authenticated()
-                        .anyRequest().denyAll())
+                        .requestMatchers(HttpMethod.POST, "/api/v1/categories/{id}/deactivate").authenticated();
+                    if (productRoutesReleased) {
+                        // Authentication at the boundary; use-case permissions remain in ProductService.
+                        authorize
+                                .requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/{id}").authenticated()
+                                .requestMatchers(HttpMethod.POST, "/api/v1/products", "/api/v1/products/{id}/deactivate").authenticated()
+                                .requestMatchers(HttpMethod.PUT, "/api/v1/products/{id}", "/api/v1/products/{id}/price").authenticated();
+                    }
+                    authorize.anyRequest().denyAll();
+                })
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler))
                 .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens).csrfTokenRequestHandler(csrfHandler))
