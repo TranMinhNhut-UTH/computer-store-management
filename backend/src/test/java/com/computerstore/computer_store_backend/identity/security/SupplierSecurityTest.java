@@ -23,12 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.*;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.csrf.CsrfTokenRepository;
-import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -165,15 +160,10 @@ class SupplierSecurityTest {
     }
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
-    @Import({ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
+    @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
             SupplierController.class, SupplierService.class, GlobalExceptionHandler.class, CurrentActorService.class,
             RoleResolutionService.class, AuthorizationService.class, PermissionPolicy.class})
-    static class Fixture extends SecurityConfig {
-        @Bean @Override SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
-                ApiAuthenticationEntryPoint entry, ApiAccessDeniedHandler denied, SecurityContextRepository contexts,
-                CsrfTokenRepository csrf, XorCsrfTokenRequestAttributeHandler handler) throws Exception {
-            return buildSupplierBoundary(http, entry, denied, contexts, csrf, handler, true);
-        }
+    static class Fixture {
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
         @Bean SupplierRepository suppliers() { return mock(SupplierRepository.class); }
         @Bean EntityManager entities() { return mock(EntityManager.class); }

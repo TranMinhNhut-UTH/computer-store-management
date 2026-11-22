@@ -31,8 +31,8 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
-        // Supplier rollout is pending explicit grant approval and live read-back.
-        return buildSupplierBoundary(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, false);
+        // Supplier V7 live read-back passed. SupplierService enforces each operation grant.
+        return buildSupplierBoundary(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
     }
 
     SecurityFilterChain buildSupplierBoundary(HttpSecurity http,
