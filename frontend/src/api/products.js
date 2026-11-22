@@ -5,6 +5,7 @@ const base = '/api/v1/products'
 const idPattern = /^[1-9][0-9]{0,18}$/
 const integerPattern = /^(0|[1-9][0-9]{0,18})$/
 const infoFields = ['sku', 'name', 'categoryId', 'brandName', 'modelCode', 'description', 'minStockLevel']
+const writePermissions = ['PRODUCT_UPDATE', 'PRODUCT_PRICE_UPDATE', 'PRODUCT_DEACTIVATE']
 function information(values) {
   return Object.fromEntries(infoFields.map(key => [key, values[key]]))
 }
@@ -45,7 +46,10 @@ export function createProductClient(fetchRequest = globalThis.fetch.bind(globalT
       if (!Array.isArray(data?.items) || !['page', 'size', 'totalPages', 'totalElements']
         .every(key => Number.isSafeInteger(data[key]) && data[key] >= 0)
         || data.size < 1 || data.size > 100 || data.items.length > data.size) throw new ApiError(502)
-      return { ...data, items: data.items.map(record) }
+      const allowedActions = Array.isArray(data.allowedActions)
+        ? writePermissions.filter(code => data.allowedActions.includes(code))
+        : []
+      return { ...data, items: data.items.map(record), allowedActions }
     },
     async detail(id, { signal } = {}) { return record(await request(path(id), { signal })) },
     create(values) { return mutate(base, 'POST', { information: information(values), sellingPrice: values.sellingPrice }) },

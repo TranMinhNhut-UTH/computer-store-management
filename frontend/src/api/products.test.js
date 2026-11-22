@@ -12,11 +12,13 @@ test('Product lists forward filters, pagination and abort signal without convert
     assert.equal(url, '/api/v1/products?page=1&size=20&q=CPU+%26+RAM&active=false&categoryId=7')
     assert.equal(options.signal, signal)
     assert.equal(options.credentials, 'same-origin')
-    return Response.json({ items: [fixture], page: 1, size: 20, totalElements: 21, totalPages: 2 })
+    return Response.json({ items: [fixture], page: 1, size: 20, totalElements: 21, totalPages: 2,
+      allowedActions: ['PRODUCT_UPDATE', 'PRODUCT_CREATE', 'ADMIN', 'PRODUCT_UPDATE'] })
   })
   const result = await client.list({ q: 'CPU & RAM', active: false, categoryId: '7', page: 1 }, { signal })
   assert.equal(result.items[0].id, fixture.id)
   assert.equal(result.items[0].sellingPrice, fixture.sellingPrice)
+  assert.deepEqual(result.allowedActions, ['PRODUCT_UPDATE'])
 })
 
 test('Product mutations use fresh CSRF and separate information, price and state contracts', async () => {

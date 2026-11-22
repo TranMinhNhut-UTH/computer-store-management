@@ -29,12 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.*;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.csrf.CsrfTokenRepository;
-import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -51,8 +46,8 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** Runs the candidate filter rules with the real actor, resolver, policy and Product service. */
-@SpringJUnitConfig(ProductRouteReadinessTest.CandidateFixture.class)
+/** Runs the released filter rules with the real actor, resolver, policy and Product service. */
+@SpringJUnitConfig(ProductRouteReadinessTest.ReleaseFixture.class)
 @WebAppConfiguration
 class ProductRouteReadinessTest {
     private static final String BASE = "/api/v1/products";
@@ -130,9 +125,9 @@ class ProductRouteReadinessTest {
     @ParameterizedTest @EnumSource(value = EmployeeRole.class, names = {"SALES_STAFF", "WAREHOUSE_STAFF"})
     void staffCanReadButNeverMutate(EmployeeRole role) throws Exception {
         approvedGrants(role);
-        for (var read : List.of(get(BASE), get(BASE + "/1"))) {
-            mvc.perform(read.with(user(PRINCIPAL))).andExpect(status().isOk());
-        }
+        mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedActions").isEmpty());
+        mvc.perform(get(BASE + "/1").with(user(PRINCIPAL))).andExpect(status().isOk());
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL)).with(csrf()))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         verify(products, never()).saveAndFlush(any());
@@ -152,7 +147,9 @@ class ProductRouteReadinessTest {
     @Test void managerReachesAllOperationsButCreateDoesNotWriteWithoutInventory() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].id").value("1"));
+                .andExpect(jsonPath("$.items[0].id").value("1"))
+                .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains(
+                        "PRODUCT_UPDATE", "PRODUCT_PRICE_UPDATE", "PRODUCT_DEACTIVATE")));
         mvc.perform(get(BASE + "/1").with(user(PRINCIPAL))).andExpect(status().isOk());
         mvc.perform(writes().get(0).with(user(PRINCIPAL)).with(csrf()))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("BUSINESS_CONFLICT"));
@@ -177,6 +174,14 @@ class ProductRouteReadinessTest {
         verifyNoInteractions(products, categories);
     }
 
+    @Test void listReportsOnlyOfferedActionsActuallyGrantedToTheCurrentActor() throws Exception {
+        when(roleQuery.getResultList()).thenReturn(List.of("MANAGER"));
+        when(permissionQuery.getResultList()).thenReturn(List.of(
+                "PRODUCT_READ", "PRODUCT_UPDATE", "PRODUCT_CREATE", "CUSTOMER_DEACTIVATE", "CATEGORY_UPDATE"));
+        mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains("PRODUCT_UPDATE")));
+    }
+
     @Test void missingAndInvalidCsrfDenyEveryMutationBeforeActorOrPersistence() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL))).andExpect(status().isForbidden());
@@ -185,7 +190,7 @@ class ProductRouteReadinessTest {
         verifyNoInteractions(users, entities, products, categories);
     }
 
-    @Test void candidateDoesNotOpenUnlistedRoutes() throws Exception {
+    @Test void releaseDoesNotOpenUnlistedRoutes() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         for (var request : List.of(delete(BASE + "/1"), patch(BASE + "/1"), post(BASE + "/1/reactivate"),
                 get(BASE + "/1/price"), get("/api/v1/inventory"), get("/api/v1/suppliers"))) {
@@ -195,16 +200,10 @@ class ProductRouteReadinessTest {
     }
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
-    @Import({ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
+    @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
             ProductController.class, ProductService.class, GlobalExceptionHandler.class,
             CurrentActorService.class, RoleResolutionService.class, AuthorizationService.class, PermissionPolicy.class})
-    static class CandidateFixture extends SecurityConfig {
-        @Bean @Override SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
-                ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
-                SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-                XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
-            return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
-        }
+    static class ReleaseFixture {
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
         @Bean EntityManager entities() { return mock(EntityManager.class); }
         @Bean ProductRepository products() { return mock(ProductRepository.class); }

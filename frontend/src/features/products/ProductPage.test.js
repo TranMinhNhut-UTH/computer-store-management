@@ -9,6 +9,7 @@ const product = { id: '9007199254740993', sku: 'CPU', name: 'Bộ xử lý', cat
   brandName: 'Brand', modelCode: 'M1', description: 'Thông tin', sellingPrice: '9999999999999999999',
   minStockLevel: '2', active: true, createdAt: '2026-11-21T17:00:00Z', updatedAt: '2026-11-22T06:45:00Z' }
 const categories = { async list() { return { items: [{ id: '7', code: 'PARTS', name: 'Linh kiện' }], totalPages: 1 } } }
+const allWrites = ['PRODUCT_UPDATE', 'PRODUCT_PRICE_UPDATE', 'PRODUCT_DEACTIVATE']
 
 before(async () => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost:5173/products' })
@@ -39,8 +40,10 @@ after(async () => { await server.close(); dom.window.close() })
 
 const button = label => [...container.querySelectorAll('button')].find(item => item.textContent === label)
 const byLabel = label => container.querySelector(`button[aria-label="${label}"]`)
-async function render(writesReleased = false) {
-  await act(async () => root.render(createElement(ProductPage, { client, categories, writesReleased })))
+async function render(allowedActions = []) {
+  const list = client.list
+  client.list = async (...args) => ({ ...await list(...args), allowedActions })
+  await act(async () => root.render(createElement(ProductPage, { client, categories })))
 }
 async function click(el) { assert.ok(el); await act(async () => el.click()) }
 async function change(selector, value) {
@@ -56,7 +59,7 @@ async function submit() {
     new window.Event('submit', { bubbles: true, cancelable: true })))
 }
 
-test('Product renders list and detail with exact money, Vietnamese date and disabled unreleased actions', async () => {
+test('Product renders list and detail for read-only staff with all writes disabled', async () => {
   await render()
   assert.match(container.querySelector('tbody').textContent, /9\.999\.999\.999\.999\.999\.999/)
   assert.match(container.querySelector('tbody').textContent, /13:45 22\/11\/2026/)
@@ -64,6 +67,15 @@ test('Product renders list and detail with exact money, Vietnamese date and disa
   await click(byLabel('Xem sản phẩm CPU'))
   assert.match(container.querySelector('dialog').textContent, /Linh kiện.*Brand.*M1/s)
   assert.deepEqual(calls.at(-1), ['detail', product.id])
+})
+
+test('Product enables only the specific write action reported by the server', async () => {
+  await render(['PRODUCT_UPDATE'])
+  assert.equal(byLabel('Sửa sản phẩm CPU').disabled, false)
+  assert.equal(byLabel('Đổi giá bán CPU').disabled, true)
+  assert.equal(byLabel('Ngừng kinh doanh CPU').disabled, true)
+  await click(byLabel('Đổi giá bán CPU'))
+  assert.equal(container.querySelector('dialog'), null)
 })
 
 test('Product search debounces and status filter applies immediately with pagination reset', async () => {
@@ -83,7 +95,7 @@ test('Product search debounces and status filter applies immediately with pagina
 })
 
 test('Product creation form is inspectable but cannot submit without DEP-001', async () => {
-  await render(true)
+  await render([...allWrites, 'PRODUCT_CREATE'])
   await click(button('Xem biểu mẫu tạo'))
   assert.ok(container.querySelector('dialog [name=sku]'))
   assert.ok(container.querySelector('dialog [name=sellingPrice]'))
@@ -108,7 +120,7 @@ test('A superseded Product search cannot overwrite a newer empty result', async 
 })
 
 test('Product edit form leaves price in a separate command and preserves a 19-digit amount', async () => {
-  await render(true)
+  await render(allWrites)
   await click(byLabel('Sửa sản phẩm CPU'))
   assert.equal(container.querySelector('dialog [name=sellingPrice]'), null)
   await change('dialog [name=name]', 'Sản phẩm mới')
@@ -129,7 +141,7 @@ test('Product edit form leaves price in a separate command and preserves a 19-di
 test('Deactivation requires confirmation and 409 remains in the dialog', async () => {
   let attempts = 0
   client.deactivate = async () => { attempts++; throw { status: 409 } }
-  await render(true)
+  await render(allWrites)
   await click(byLabel('Ngừng kinh doanh CPU'))
   assert.match(container.querySelector('dialog').textContent, /vẫn được lưu/)
   await click(button('Hủy'))
@@ -148,7 +160,7 @@ test('Successful deactivation refreshes the row and removes its deactivate actio
     current = { ...product, active: false }
     return current
   }
-  await render(true)
+  await render(allWrites)
   await click(byLabel('Ngừng kinh doanh CPU'))
   await submit()
   assert.equal(container.querySelector('dialog'), null)

@@ -45,7 +45,8 @@ public class ProductService {
     }
 
     public ProductPageResponse list(String query, Boolean active, String categoryId, int page, int size) {
-        permissions.requirePermission(PRODUCT_READ.code());
+        var allowedActions = permissions.availableActions(PRODUCT_READ,
+                PRODUCT_UPDATE, PRODUCT_PRICE_UPDATE, PRODUCT_DEACTIVATE);
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) throw invalid();
         var q = text(query, 200, false);
         var pattern = q == null || q.isEmpty() ? null :
@@ -53,7 +54,7 @@ public class ProductService {
         var result = products.search(pattern, active, categoryId == null ? null : id(categoryId),
                 PageRequest.of(page, size, Sort.by("name", "id")));
         return new ProductPageResponse(result.getContent().stream().map(ProductService::response).toList(),
-                result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages());
+                result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(), allowedActions);
     }
 
     public ProductResponse detail(String id) {

@@ -1,10 +1,10 @@
 # Product Management V1 — CAT-002
 
-The controller and service contract below is covered by isolated tests. The HTTP security configuration still denies all Product routes until the approved grants are deployed and an explicit route release is made. The signed-in shell exposes `/products`, reports real 401/403 responses, and disables write actions. The create form is a preview and never submits while DEP-001 is open.
+The six routes below require an authenticated session and the listed server permissions. The signed-in shell exposes `/products` and reports real 401/403 responses. The list response includes `allowedActions` for the current user, drawn from the UPDATE, PRICE_UPDATE, and DEACTIVATE grants. The UI uses these hints to enable each control. Every mutation independently checks its permission and CSRF. The create form remains a preview while DEP-001 is open.
 
 | Method and path | Server permission | Behavior when released |
 |---|---|---|
-| GET `/api/v1/products` | `PRODUCT_READ` | 200. Optional `q`, `active`, `categoryId`. Case-normalized SKU and collation-based name, brand, model search. Literal search punctuation. Zero-based `page`, default `size=20`, maximum 100, ordered by name then ID. Returns `items/page/size/totalElements/totalPages`. |
+| GET `/api/v1/products` | `PRODUCT_READ` | 200. Optional `q`, `active`, `categoryId`. Case-normalized SKU and collation-based name, brand, model search. Literal search punctuation. Zero-based `page`, default `size=20`, maximum 100, ordered by name then ID. Returns `items/page/size/totalElements/totalPages/allowedActions`. |
 | GET `/api/v1/products/{id}` | `PRODUCT_READ` | 200 or 404. |
 | POST `/api/v1/products` | `PRODUCT_CREATE` and `PRODUCT_PRICE_UPDATE` | Accepts `{information, sellingPrice}`. Validates input, the active Category and SKU uniqueness. Currently stops with 409 before inserting either Product or Inventory. The intended success contract after DEP-001 is 201 with Location. |
 | PUT `/api/v1/products/{id}` | `PRODUCT_UPDATE` | 200. Replaces information only. Leaves price, active state and creation timestamp unchanged. |
@@ -28,8 +28,8 @@ Approval applies to this five-code subset and these seven pairs. It does not cha
 
 Warehouse CREATE and UPDATE have been withdrawn. Initial pricing requires both `PRODUCT_CREATE` and `PRODUCT_PRICE_UPDATE`. Even an authorized MANAGER cannot create a Product before DEP-001 is integrated.
 
-V4 registers the five codes with `name=code` and `description=NULL`. V5 inserts the seven approved pairs. They are compiled as opt-in Java migrations outside normal discovery and have not been executed. See the [Product rollout runbook](authorization-runtime-permission-rollout.md#15-product-permission-rollout-v1-v4v5) for exact commands, history requirements, and postchecks.
+V4 registers the five codes with `name=code` and `description=NULL`. V5 inserts the seven approved pairs. They are compiled as opt-in Java migrations outside normal discovery. The local operator confirmed both versions and the five-permission, seven-grant read-back before releasing the routes. See the [Product rollout runbook](authorization-runtime-permission-rollout.md#15-product-permission-rollout-v1-v4v5) for commands, history requirements, and postchecks.
 
-**HTTP activation:** The exact six method/path combinations are exercised with the real filter chain and service guards in an isolated candidate configuration. The application builds that same filter chain with Product activation disabled. A reviewed release change is required after grants are approved and applied. Default denial of other APIs and CSRF behavior remain unchanged.
+The isolated HTTP tests exercise the six Product method/path combinations through the application filter chain and service guards. Other API boundaries and CSRF rules continue to apply.
 
 **DEP-001 handoff to TV2.** The existing Inventory repository has no approved initialization use case. Agree on the owner and API for creating exactly one zero-balance Inventory row in the Product create transaction. Confirm lock order, failure propagation, and the missing/duplicate-row contract. Verify success and rollback in a disposable database before replacing the current creation block. No stock or ledger changes are part of this checkpoint.

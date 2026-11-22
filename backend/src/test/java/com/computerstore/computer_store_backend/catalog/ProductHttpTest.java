@@ -47,16 +47,18 @@ class ProductHttpTest {
                 post(BASE + "/42/deactivate"));
     }
 
-    @Test void realSecurityDeniesEveryUnreleasedProductRouteEvenForAuthenticatedManager() throws Exception {
+    @Test void releasedProductRoutesStillRequireAuthenticationAndUnlistedRoutesStayClosed() throws Exception {
         reset(service);
         var mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         mvc.perform(get(BASE)).andExpect(status().isUnauthorized());
         mvc.perform(get(BASE + "/42")).andExpect(status().isUnauthorized());
-        mvc.perform(get(BASE).with(user("manager").roles("MANAGER"))).andExpect(status().isForbidden());
-        mvc.perform(get(BASE + "/42").with(user("admin").roles("ADMIN"))).andExpect(status().isForbidden());
         for (var command : writes()) {
-            mvc.perform(command.with(user("manager").roles("MANAGER")).with(csrf())).andExpect(status().isForbidden());
+            mvc.perform(command.with(csrf())).andExpect(status().isUnauthorized());
         }
+        var manager = user("manager").roles("MANAGER");
+        mvc.perform(delete(BASE + "/42").with(manager).with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(post(BASE + "/42/reactivate").with(manager).with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/inventory").with(manager)).andExpect(status().isForbidden());
         verifyNoInteractions(service);
     }
 

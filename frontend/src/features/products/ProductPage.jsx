@@ -15,6 +15,7 @@ import './products.css'
 
 const blank = { sku: '', name: '', categoryId: '', brandName: '', modelCode: '', description: '', minStockLevel: '0', sellingPrice: '' }
 const titles = { create: 'Tạo sản phẩm', detail: 'Chi tiết sản phẩm', edit: 'Sửa sản phẩm', price: 'Đổi giá bán', deactivate: 'Ngừng kinh doanh' }
+const permissionByAction = { edit: 'PRODUCT_UPDATE', price: 'PRODUCT_PRICE_UPDATE', deactivate: 'PRODUCT_DEACTIVATE' }
 const digits = new Intl.NumberFormat('vi-VN')
 const money = value => `${digits.format(BigInt(value))} ₫`
 
@@ -68,8 +69,7 @@ function CategoryPicker({ client, current, value, onChange, error }) {
   </div>
 }
 
-// Product grants are pending. The UI restriction is informational; the server enforces access.
-export function ProductPage({ client = productClient, categories = categoryClient, writesReleased = false }) {
+export function ProductPage({ client = productClient, categories = categoryClient }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [refresh, refreshList] = useState(0)
@@ -84,6 +84,13 @@ export function ProductPage({ client = productClient, categories = categoryClien
   const detail = useRef(null)
   const timer = useRef(null)
   const form = useRef(null)
+  const settled = list?.query === query && list.refresh === refresh
+  const result = settled ? list.result : null
+  const error = settled ? list.error : null
+
+  function canWrite(action) {
+    return Boolean(permissionByAction[action] && result?.allowedActions?.includes(permissionByAction[action]))
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -115,6 +122,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   function change(field, value) { setValues(previous => ({ ...previous, [field]: value })) }
 
   async function open(action, id) {
+    if (action !== 'detail' && action !== 'create' && !canWrite(action)) return
     detail.current?.abort()
     setFields({}); setFailure(null); setNotice(''); setValues(blank)
     if (action === 'create') { setModal({ action }); return }
@@ -139,8 +147,8 @@ export function ProductPage({ client = productClient, categories = categoryClien
   async function submit(event) {
     event.preventDefault()
     const { action, record } = modal
-    // DEP-001 keeps create blocked even if other writes are later released.
-    if (!writesReleased || !record || pendingWrite.current || !['edit', 'price', 'deactivate'].includes(action)) return
+    // Create has no allowed action while DEP-001 is open.
+    if (!canWrite(action) || !record || pendingWrite.current) return
     const data = productValues(values)
     const errors = validateProduct(data, action)
     setFields(errors); setFailure(null)
@@ -162,13 +170,10 @@ export function ProductPage({ client = productClient, categories = categoryClien
     } finally { pendingWrite.current = false; setSaving(false) }
   }
 
-  const settled = list?.query === query && list.refresh === refresh
-  const result = settled ? list.result : null
-  const error = settled ? list.error : null
   const action = modal?.action
   const fieldsVisible = action === 'create' || Boolean(modal?.record)
   const info = action === 'create' || action === 'edit'
-  const blocked = !writesReleased || action === 'create'
+  const blocked = !canWrite(action)
   function field(name, label, props = {}) {
     return <TextInput label={label} name={name} value={values[name]} error={fields[name]}
       onChange={event => change(name, event.target.value)} {...props} />
@@ -177,7 +182,6 @@ export function ProductPage({ client = productClient, categories = categoryClien
   return <div className="product-page">
     <PageHeader title="Quản lý sản phẩm" description="Tra cứu SKU, danh mục, giá bán và trạng thái kinh doanh."
       actions={<Button id="product-create" variant="secondary" onClick={() => open('create')}>Xem biểu mẫu tạo</Button>} />
-    {!writesReleased && <p className="csm-muted">Các thao tác ghi đang chờ phê duyệt quyền Sản phẩm.</p>}
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách sản phẩm">
       <form className="product-filters" aria-label="Tìm kiếm sản phẩm" onSubmit={event => { event.preventDefault(); apply(search) }}>
@@ -208,9 +212,9 @@ export function ProductPage({ client = productClient, categories = categoryClien
               <td><time dateTime={record.updatedAt}>{formatVietnameseDate(record.updatedAt, { withTime: true })}</time></td>
               <td><div className="product-actions">
                 <Button variant="secondary" aria-label={`Xem sản phẩm ${record.sku}`} onClick={() => open('detail', record.id)}>Xem</Button>
-                <Button variant="secondary" disabled={!writesReleased} aria-label={`Sửa sản phẩm ${record.sku}`} onClick={() => open('edit', record.id)}>Sửa</Button>
-                <Button variant="secondary" disabled={!writesReleased} aria-label={`Đổi giá bán ${record.sku}`} onClick={() => open('price', record.id)}>Đổi giá</Button>
-                {record.active && <Button variant="secondary" className="product-danger" disabled={!writesReleased}
+                <Button variant="secondary" disabled={!canWrite('edit')} aria-label={`Sửa sản phẩm ${record.sku}`} onClick={() => open('edit', record.id)}>Sửa</Button>
+                <Button variant="secondary" disabled={!canWrite('price')} aria-label={`Đổi giá bán ${record.sku}`} onClick={() => open('price', record.id)}>Đổi giá</Button>
+                {record.active && <Button variant="secondary" className="product-danger" disabled={!canWrite('deactivate')}
                   aria-label={`Ngừng kinh doanh ${record.sku}`} onClick={() => open('deactivate', record.id)}>Ngừng kinh doanh</Button>}
               </div></td>
             </tr>)}</tbody>

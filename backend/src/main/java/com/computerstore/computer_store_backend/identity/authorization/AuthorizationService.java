@@ -23,12 +23,16 @@ public class AuthorizationService {
 
     /** The required code must come from an approved server policy, never a request-provided permission. */
     public CurrentActor requirePermission(String requiredCode) {
+        return resolveWithPermission(requiredCode).actor();
+    }
+
+    ResolvedAccess resolveWithPermission(String requiredCode) {
         var current = access.resolveCurrent();
         if (!RoleResolutionService.isCanonicalPermissionCode(requiredCode)
                 || !current.permissionCodes().contains(requiredCode)) {
             throw denied();
         }
-        return current.actor();
+        return current;
     }
 
     private static BusinessException denied() {

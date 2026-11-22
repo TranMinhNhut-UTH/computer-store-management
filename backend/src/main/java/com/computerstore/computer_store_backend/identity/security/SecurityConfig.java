@@ -31,8 +31,8 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
-        // Product activation requires a reviewed release change. No property or profile can enable it.
-        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, false);
+        // Product grants were verified before this release. Use-case permissions remain in ProductService.
+        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
     }
 
     SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
