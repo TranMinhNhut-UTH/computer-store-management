@@ -126,3 +126,49 @@ npm run build
 `jsdom` là devDependency duy nhất thêm trong Phase B, dùng React act/createRoot cho interaction/auth gate. Các auth response chỉ là stub trong tests, không gửi HTTP thật. Dialog được adapter trong jsdom để kiểm tra open/close/focus; native focus trap/backdrop vẫn cần browser thật.
 
 Responsive navigation được kiểm tra 2026-11-20 bằng Chrome headless local, profile test riêng và intercept toàn bộ API (không gọi Backend/DB): widths 320/390/767/768/900/1023/1024/1440px, sidebar 256/72px, margin content, không tràn ngang/trùng navigation; native dialog/Tab/Escape/backdrop/close/focus, resize cleanup, Light/Dark và logout với CSRF giả lập. Ảnh desktop expanded/collapsed và mobile drawer được kiểm tra trực quan. Đây là browser automation với auth fixtures riêng trong phiên test, không chứng minh đăng nhập bằng tài khoản thực. QA thủ công trên thiết bị cảm ứng, screen reader, zoom 200% và trình duyệt khác còn pending. Tracker không có ID App Shell riêng nên giữ nguyên.
+
+## Category Frontend Part 2 — 2026-11-21
+
+CAT-001 bổ sung page thật tại mục Danh mục của App Shell đã xác thực; các ghi chú
+coming-soon phía trên mô tả foundation trước đó, không áp dụng cho page Category mới.
+Các module khác giữ nguyên placeholder. Không đọc role từ frontend để suy quyền.
+
+`features/categories/` dùng PageHeader, Card, Button, TextInput, StatusBadge,
+LoadingState và EmptyState hiện có. Table semantic có caption/column/row headers,
+vùng cuộn riêng có tên và focus-visible; filter/layout co về một cột trên mobile.
+Mọi màu dùng semantic tokens light/dark, không thêm palette hoặc UI framework.
+
+Dialog tạo/sửa/xác nhận dùng native modal, label/error liên kết, focus đầu vào hoặc
+nút Hủy, Escape/backdrop/Close, khóa cuộn và khôi phục focus. Không đóng khi mutation
+đang chạy; chặn submit trùng và chặn submit dữ liệu cũ nếu detail read thất bại.
+Ngừng sử dụng có xác nhận riêng; không thêm xóa hoặc kích hoạt lại.
+
+API contract lấy từ Category Controller/DTO và category-management-api.md:
+items/page/size/totalElements/totalPages, ID string, payload chỉ code/name/description.
+API transport dùng chung với auth, cookie same-origin và CSRF mới cho mỗi mutation,
+không retry tự động, không lưu token/session/password. Error chỉ dùng status/code và
+tên field allowlist; không render detail/message thô từ Backend.
+
+60/60 tests frontend PASS: 24 regression + 13 client/validation + 22 Category UI +
+1 shell integration; npm run build PASS. Tests dùng API stubs trong test source,
+không đưa fixture vào runtime. Browser render smoke với API intercept không thay
+E2E thật; keyboard/native focus trap, thiết bị cảm ứng, screen reader, zoom/contrast
+từng màn hình và cross-browser còn pending. HTTP Category vẫn denyAll; grants và
+contract approval còn pending. Không sửa Backend/DB hoặc tự đánh dấu CAT-001 DONE.
+
+## Quy ước bảng và ngày giờ — Category UX V1
+
+- Thao tác trong ô bảng dùng nút có viền, cao tối thiểu 36 px, đệm ngang 12 px,
+  bo góc 8 px và cách nhau 8 px. Căn đầu ô, giữ độ rộng theo nhãn và tránh ngắt
+  chữ trong nút. Đặt các nút cùng hàng khi đủ chỗ. Khi hẹp, cho phép xuống hàng
+  theo từng nút và giữ vùng cuộn ngang riêng của bảng.
+- Dùng viền trung tính cho **Sửa** và viền đỏ dịu theo token lỗi cho
+  **Ngừng sử dụng**. Giữ hover, focus-visible và trạng thái disabled của nút
+  HTML. Danh mục đã ngừng sử dụng chỉ hiển thị **Sửa**.
+- Badge **Đang sử dụng** dùng token `success` với nền dịu. Badge **Ngừng sử dụng**
+  dùng token `error` với nền đỏ dịu. Giữ nhãn trạng thái rõ ràng và kiểm tra
+  tương phản chữ trên cả giao diện sáng và tối.
+- Hiển thị ngày theo `dd/MM/yyyy` và ngày giờ theo `HH:mm dd/MM/yyyy` ở múi giờ
+  `Asia/Ho_Chi_Minh`. Dùng formatter hiển thị chung `formatVietnameseDate` và
+  giữ timestamp gốc trong thuộc tính `dateTime`. Khi hiển thị cùng ô, đặt giờ
+  cập nhật ở dòng chính, ngày tạo ở dòng phụ.

@@ -6,7 +6,8 @@ import { Button } from '../components/ui/Button.jsx'
 import { StatusBadge } from '../components/ui/StatusBadge.jsx'
 import { PageHeader } from '../components/ui/PageHeader.jsx'
 import { EmptyState } from '../components/ui/EmptyState.jsx'
-import { navigationGroups } from './navigation.js'
+import { currentDestination, navigateTo, subscribeNavigation } from './navigation.js'
+import { CategoryPage } from '../features/categories/CategoryPage.jsx'
 import './shell.css'
 import '../components/ui/ui.css'
 
@@ -30,12 +31,16 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
   const [tabletExpanded, setTabletExpanded] = useState(false)
   const collapsed = viewport === 'tablet' ? !tabletExpanded : desktopCollapsed
-  const [selectedId, setSelectedId] = useState('overview')
+  const current = useSyncExternalStore(subscribeNavigation, currentDestination)
+  const selectedId = current.id
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawer = useRef(null)
   const closeButton = useRef(null)
   const heading = useRef(null)
-  const current = navigationGroups.flatMap(group => group.items).find(item => item.id === selectedId)
+
+  useEffect(() => {
+    if (window.location.pathname === '/login') navigateTo('overview', true)
+  }, [])
 
   useEffect(() => {
     if (!mobile) setDrawerOpen(false)
@@ -64,7 +69,7 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   }
 
   function select(id) {
-    setSelectedId(id)
+    navigateTo(id)
     setDrawerOpen(false)
     // After dialog cleanup restores its opener, move focus to the newly selected content.
     requestAnimationFrame(() => heading.current?.focus())
@@ -79,8 +84,10 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
     <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} />
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">
         {error && <div className="message message-error" role="alert">{error}</div>}{notice && <p className="message message-success" role="status">{notice}</p>}
-        <PageHeader title={current.label} description="Không gian chức năng của Computer Store Management." actions={<StatusBadge>Chưa triển khai</StatusBadge>} />
-        <Card aria-label={current.label}><EmptyState title="Chức năng chưa triển khai" description={`Mục ${current.label} hiện chỉ dùng để điều hướng. Chưa có dữ liệu hoặc thao tác nghiệp vụ.`} /></Card>
+        {selectedId === 'categories' ? <CategoryPage /> : <>
+          <PageHeader title={current.label} description="Không gian chức năng của Computer Store Management." actions={<StatusBadge>Chưa triển khai</StatusBadge>} />
+          <Card aria-label={current.label}><EmptyState title="Chức năng chưa triển khai" description={`Mục ${current.label} hiện chỉ dùng để điều hướng. Chưa có dữ liệu hoặc thao tác nghiệp vụ.`} /></Card>
+        </>}
       </main>
     </div>
   </div>

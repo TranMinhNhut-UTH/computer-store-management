@@ -71,10 +71,44 @@ Expansion preferences stay in memory, independently for desktop/tablet.
 Run all current frontend tests:
 
 ```powershell
-node --test src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js
+node --test --test-concurrency=1 src/app/AppLayout.test.js src/theme/theme.test.js src/api/auth.test.js src/api/categories.test.js src/features/categories/CategoryPage.test.js
 ```
 
 Unit tests and build checks do not replace browser QA. Responsive navigation has also
 been checked in isolated headless Chrome with mocked auth responses and no backend
 requests; see the design-system document for the checked viewports and interactions.
 Real-account login, touch devices, screen readers, zoom and other browsers remain pending.
+
+## Category Management
+
+Choose **Danh mục** in the authenticated shell or open `/categories` directly.
+The session check still runs before rendering the shell. Refresh and browser
+Back/Forward restore the screen from the URL. If serving the production build
+from a static host, configure SPA fallback to `index.html` for frontend paths and
+continue routing `/api` to the backend. Other modules retain their existing
+placeholders. Category access is enforced by the backend.
+
+Category search applies after 350 ms of idle typing or immediately on Enter.
+Status filters apply immediately, and changing or clearing filters returns to
+the first page. The fixed 20-item pagination, search and filtering run on the
+server. Dates display in Vietnamese format in `Asia/Ho_Chi_Minh`. The page handles
+loading, empty and error states. Edit and deactivate dialogs fetch fresh detail
+before enabling submission. Deactivated categories remain visible via the
+**Ngừng sử dụng** filter.
+Only code/name/description are sent; IDs remain decimal strings. Update cannot change
+active/createdAt. No delete/reactivate action is offered.
+
+`api/client.js` shares sanitized errors and same-origin cookie transport with the existing
+auth client. Category mutations fetch a fresh server-named CSRF header before each
+POST/PUT; failures are never retried automatically. No auth data enters browser storage.
+400/401/403/404/409 are handled explicitly. A deactivation 409 explains the conservative
+Product-reference restriction without claiming every conflict has that cause.
+
+Native modal dialogs provide focus containment, Escape/cancel, scroll lock and focus
+restoration; dismiss is disabled while saving. CSS uses existing semantic tokens for
+both themes. Tables scroll within their own region on narrow screens.
+
+The frontend suite uses mocked APIs. Run it with the command above. The reported
+MANAGER smoke tests cover live Category create, read, update, deactivate, search
+and status filters. Rerun those checks separately to validate this UX revision
+against the live backend.

@@ -1,5 +1,9 @@
 # Runtime Permission Seed và Role Grant Rollout — Part 3B-2B
 
+**2026-11-22 — executable source local, base 8bf5b6c:** đã triển khai V2/V3 và runner opt-in ngoài discovery mặc định (mục 14), chưa thực thi. Các mô tả “chưa có executable migration” ở snapshot cũ không còn mô tả source hiện tại; Stage A/B runtime và E2E vẫn chưa chạy.
+
+**Category Integration V1 local:** mục 13 ghi subset/metadata và sáu pairs đã được người dùng chọn cho Category. R01/R02 không còn thiếu lựa chọn payload đối với slice này; phê duyệt DB execution, kiểm kê target, version/checksum/runner và recovery vẫn PENDING. Các đoạn “chưa có manifest cụ thể” bên dưới là snapshot chung trước cập nhật này; không chuyển các permissions khác thành approved.
+
 Ngày 2026-11-21; branch `feature/authorization`, HEAD `e251d0c`. Thiết kế Part 3B-2B.1 được cập nhật ở Part 3B-2B.2 với helper manifest validation/fingerprint và isolated tests. **Catalog registration/migration vẫn PROPOSED/PENDING, chưa có manifest APPROVED, chưa seed hoặc thực thi Stage A; Stage B chưa triển khai.** D01–D13 không tự được phê duyệt. Kết quả hiện tại: 29 tests mới + 220 regression = 249/249 PASS, không MySQL/Flyway; không chứng minh rollout thực tế.
 
 ## 1. Nguồn và hiện trạng đã kiểm tra
@@ -301,3 +305,103 @@ Chưa có tests thực thi migration/SQL/JDBC registration, MySQL adoption/trans
 ### 12.4. Trạng thái vận hành
 
 **Stage A chưa chạy; không có manifest APPROVED hoặc executable migration. Stage B chưa triển khai, không grants mới.** Business APIs vẫn denyAll; auth/CSRF, schema, Entity/Repository, properties/POM và Bootstrap giữ nguyên. Không tạo ADMIN hoặc sửa user_role. Task này chỉ thêm helper/test và cập nhật rollout/tracker; chưa commit/push, merge main hoặc phê duyệt D01–D13.
+
+## 13. Category V1 — exact payload đã chọn, execution chưa được phép
+
+Source chuẩn bị: `identity/authorization/registration/CategoryPermissionRollout.java`.
+Class thuần Java, immutable, không bean/runner/SQL executor/JavaMigration; không được
+dùng danh sách này làm fallback grants trong AuthorizationService hoặc PermissionPolicy.
+
+Stage A: đúng bốn codes CATEGORY_READ, CATEGORY_CREATE, CATEGORY_UPDATE,
+CATEGORY_DEACTIVATE; mỗi entry `name = code`, `description = null`.
+Canonical manifest SHA-256 (không phải Flyway checksum):
+`3c99e12abed2c665096bf3489d75d97754c9002ee7f9f8389aa96ad3aa331bf6`.
+
+Stage B: đúng sáu pairs, không mở rộng theo toàn bộ enum/matrix:
+
+```text
+MANAGER          CATEGORY_READ
+MANAGER          CATEGORY_CREATE
+MANAGER          CATEGORY_UPDATE
+MANAGER          CATEGORY_DEACTIVATE
+SALES_STAFF      CATEGORY_READ
+WAREHOUSE_STAFF  CATEGORY_READ
+```
+
+Không ADMIN, user_role/account/role mới, permission ngoài Category hoặc provisional.
+Đây là lựa chọn policy/payload của người dùng cho slice Category, không tự APPROVE
+D01–D13 hay phần còn lại của R01–R07. Stage A/B chưa thực thi; chọn manifest không
+cấp quyền DB runtime hoặc cho phép chạy migration.
+
+Phương án migration để review, **chưa tạo executable**:
+
+1. Giữ V1 nguyên trạng. Sau approval riêng, đóng băng payload A/B và SQL/validation
+   revision; chọn hai version chưa dùng sau đối chiếu main/TV2/history. Không chọn V2/V3
+   trước khi kiểm tra. Dùng hai Java versioned DML migrations theo mục 4, không DDL/JPA.
+2. Đóng gói job riêng với location explicit ngoài `classpath:db/migration` của app;
+   không ship class migration discoverable trong artifact Boot thường. Properties hiện
+   `spring.flyway.enabled=true`, nên không được chỉ thêm migration vào default location.
+   Runner/classpath/discovery/checksum cần review/test trước khi tạo và phát hành.
+3. Preflight read-only: local target computer_store_dev, history/schema/unique/FK đúng
+   V1; kiểm kê metadata bốn codes và toàn bộ Category grants. Metadata không khớp,
+   role thiếu, grants ngoài sáu pairs, aliases hoặc provisional/unknown mappings thì
+   dừng, không tự overwrite/delete/repair. Không giả định DB rỗng hoặc role IDs cố định.
+4. A chỉ insert permission thiếu, metadata khớp mới adopt/no-op; B lookup role/permission
+   bằng code và chỉ insert pair thiếu sau khi A được xác minh. Giữ IDs/timestamps cũ,
+   dùng UTC microsecond cho rows mới; verify exact set, affected rows và ngoài-scope
+   snapshots trong cùng transaction mỗi stage. B không sửa user_role/app_user.
+5. Migration đã applied phải bất biến; checksum bao gồm frozen payload/SQL/validation,
+   không đọc enum/helper mới nhất để replay lịch sử. A/B là hai transaction riêng;
+   failure trước commit rollback stage, outcome unknown thì dừng/inspect. Giữ A nếu B
+   fail, forward fix; không tự revoke grants/adopted rows hoặc repair history.
+
+Trước DB task còn cần approval riêng cho read-only inventory, A, B, runner/version/checksum,
+window/backup/recovery và các E2E writes. Chưa có lệnh migration sẵn sàng thực thi;
+không dùng `spring-boot:run` để áp rollout. Kế hoạch E2E: Category API mục 8.
+
+## 14. Executable source V2/V3 — CHƯA chạy
+
+Preflight do người dùng cung cấp: MySQL 8.0.46/computer_store_dev, bốn role V1,
+permission/role_permission rỗng, một ADMIN assignment, V1 success, UNIQUE/FK RESTRICT/
+InnoDB. Agent không kết nối để xác minh lại và không thực hiện DB writes trong task này.
+
+Java migrations nằm tại `operations/category/v1/`:
+`V2__register_category_permissions.java` (A), `V3__grant_category_permissions.java` (B).
+Lý do dùng Java: pre/post checks và fail hard trong transaction thay vì coi INSERT 0 rows
+là thành công. FrozenCategoryRolloutV1 giữ literal payload bốn codes/sáu pairs ở mục 13,
+không gọi live PermissionCode/PermissionPolicy/CategoryPermissionRollout để sinh payload.
+Existing compatible rows giữ IDs/timestamps; metadata, duplicate/orphan/ADMIN/unknown
+mapping hoặc bất kỳ permission ngoài bốn codes đều khiến migration dừng, không sửa drift.
+Baseline này cố ý chặt theo preflight rỗng; có dữ liệu module khác thì cần review lại.
+
+V2 checksum = **947719693**, V3 = **253774843**, CRC32 UTF-8 trên frozen payload, SQL,
+role/URL constraints và validation revision R1; golden tests pin version/description/checksum.
+Sau applied không sửa các class v1 hoặc validation revision để né checksum: phải thêm
+version mới, đóng băng source/artifact của release. V1 giữ nguyên. Phiên bản 2/3 dựa trên
+source chỉ có V1 và history người dùng cung cấp; phải kiểm tra lại version conflicts trước deploy.
+
+Discovery chỉ qua `CategoryPermissionMigrationRunner` đăng ký `javaMigrations(...)` rõ ràng:
+A chỉ V2/target 2; B V2+V3/target 3, baseline/out-of-order/createSchemas tắt, validate và
+executeInTransaction bật, group=false. Runner plain Java, không Spring bean/Boot runner;
+properties/POM/default location `classpath:db/migration` không đổi, nên app startup thường
+không phát hiện V2/V3. Runner kiểm tra read-only target/InnoDB/history V1 trước Flyway;
+B cần V2 success/checksum. Không cho Flyway tự bootstrap V1 trên DB chưa có history.
+
+Runner từ chối mọi lời gọi thiếu ba flags: `--category-permission-rollout`, `--stage=A`
+(hoặc B), `--confirm-target=computer_store_dev`. Credentials chỉ từ DB_URL/DB_USERNAME/
+DB_PASSWORD; URL chỉ 127.0.0.1:3306/computer_store_dev và allowlist options, không echo
+credentials. Entry point là fully-qualified CategoryPermissionMigrationRunner trên backend
+runtime classpath; chưa chạy runner, không dùng Boot startup thay thế. Mọi lần thực thi
+vẫn cần task/approval DB riêng và maintenance window; không có stage mặc định hoặc auto-retry.
+
+Mỗi stage yêu cầu writable transaction RR/SERIALIZABLE với autocommit=false, dùng khóa
+FOR UPDATE và snapshots, chỉ INSERT đúng bảng/payload, UTC_TIMESTAMP(6), không UPDATE/
+DELETE/user_role/account writes. Migration không commit/rollback/close connection: exception
+truyền về Flyway transaction owner. A/B là hai transaction riêng; B lỗi không sửa/xóa A.
+Commit outcome không rõ phải dừng và inspect; không tự repair hoặc xóa dữ liệu để retry.
+
+32 tests mới (JDBC stubs, config/bean safety) + 356 regression = **388/388 PASS**, không
+failure/error/skipped. Không gọi Flyway.load/migrate hoặc JDBC thật trong tests; chỉ unit-test
+migration methods trên mock connections. Physical rollback, locks/concurrency, discovery và
+packaging với Flyway/MySQL thật, backup/recovery/E2E còn pending; không coi isolated PASS
+là migration đã applied. CAT-001 vẫn IN_PROGRESS; chưa commit/push phần source này.

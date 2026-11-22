@@ -38,6 +38,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
+                        // Category V1 only: service PermissionPolicy enforces the exact operation grant.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/{id}").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/categories").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/categories/{id}").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/categories/{id}/deactivate").authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler))
