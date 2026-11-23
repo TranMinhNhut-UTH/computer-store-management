@@ -40,6 +40,11 @@ before(async () => {
     if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
+    if (url.startsWith('/api/v1/employees')) {
+      return capabilities.includes('EMPLOYEE_READ')
+        ? Response.json({ items: [], page: 0, size: 20, totalPages: 0, totalElements: 0, allowedActions: [] })
+        : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    }
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
@@ -439,4 +444,19 @@ test('reports recover from a network error and distinguish an empty database', a
   assert.match(container.querySelector('.reports-page .csm-empty').textContent, /Chưa có danh mục/)
   assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
   assert.equal(container.querySelector('.reports-page table'), null)
+})
+
+test('staff navigation and deep links respect the server capability and API denial', async () => {
+  authenticated = true
+  capabilities = ['EMPLOYEE_READ']
+  await render()
+  await click(container.querySelector('[data-nav-id=employees]'))
+  assert.equal(window.location.pathname, '/employees')
+  assert.match(container.querySelector('main').textContent, /Không có tài khoản phù hợp/)
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  capabilities = []
+  await render()
+  assert.equal(container.querySelector('[data-nav-id=employees]'), null)
+  assert.match(container.querySelector('.staff-page [role=alert]').textContent, /không có quyền/)
 })

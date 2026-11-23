@@ -1,0 +1,4 @@
+.staff-roles label { display: flex; align-items: center; gap: var(--csm-space-2); }
+.staff-roles legend { margin-bottom: var(--csm-space-2); font-weight: 600; }
+.staff-roles input[type=checkbox] { width: 1rem; min-height: 1rem; margin: 0; accent-color: var(--csm-primary); }
+.staff-roles p { margin: 0; }

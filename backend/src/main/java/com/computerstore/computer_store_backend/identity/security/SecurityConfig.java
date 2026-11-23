@@ -7,6 +7,7 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -30,15 +31,16 @@ public class SecurityConfig {
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
+            XorCsrfTokenRequestAttributeHandler csrfHandler,
+            @Value("${csm.staff-management.enabled:false}") boolean staffManagement) throws Exception {
         // Verify the Customer V9 grants before deploying this release.
-        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
+        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true, staffManagement);
     }
 
     SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler, boolean customerReleased) throws Exception {
+            XorCsrfTokenRequestAttributeHandler csrfHandler, boolean customerReleased, boolean staffManagement) throws Exception {
         return http
                 .authorizeHttpRequests(authorize -> {
                     authorize
@@ -61,6 +63,12 @@ public class SecurityConfig {
                         authorize.requestMatchers(HttpMethod.GET, "/api/v1/customers", "/api/v1/customers/{id}").authenticated()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/customers").authenticated()
                                 .requestMatchers(HttpMethod.PUT, "/api/v1/customers/{id}").authenticated();
+                    }
+                    if (staffManagement) {
+                        authorize.requestMatchers(HttpMethod.GET, "/api/v1/employees", "/api/v1/employees/{id}").authenticated()
+                                .requestMatchers(HttpMethod.POST, "/api/v1/employees", "/api/v1/employees/{id}/lock",
+                                        "/api/v1/employees/{id}/unlock").authenticated()
+                                .requestMatchers(HttpMethod.PUT, "/api/v1/employees/{id}", "/api/v1/employees/{id}/roles").authenticated();
                     }
                     authorize.requestMatchers(HttpMethod.GET, "/api/v1/reports/access", "/api/v1/reports/overview")
                             .authenticated().anyRequest().denyAll();

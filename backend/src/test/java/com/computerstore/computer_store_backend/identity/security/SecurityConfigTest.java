@@ -78,6 +78,19 @@ class SecurityConfigTest {
         mvc.perform(post(path).with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
     }
 
+    @Test void staffRoutesAndCapabilityAreClosedByDefault() throws Exception {
+        var roles = context.getBean(RoleResolutionService.class);
+        reset(roles);
+        when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(
+                new CurrentActor(1L, "fixture"), Set.of(EmployeeRole.ADMIN), Set.of("EMPLOYEE_READ")));
+        mvc.perform(get("/api/v1/auth/ui-capabilities").with(user("fixture")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.permissions").isEmpty());
+        mvc.perform(get("/api/v1/employees").with(user("fixture").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/employees/1/unlock").with(user("fixture").roles("ADMIN")).with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
     @Test void healthIsPublicAndDoesNotCreateSession() throws Exception {
         var result = mvc.perform(get("/api/health")).andExpect(status().isOk())
                 .andExpect(content().string("Computer Store API is running")).andReturn();
