@@ -1,7 +1,7 @@
 package com.computerstore.computer_store_backend.inventory.service;
 
 import com.computerstore.computer_store_backend.identity.authorization.CurrentActor;
-import com.computerstore.computer_store_backend.identity.entity.AppUser;
+import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import com.computerstore.computer_store_backend.inventory.entity.Inventory;
 import com.computerstore.computer_store_backend.inventory.entity.InventoryAdjustmentItem;
 import com.computerstore.computer_store_backend.inventory.entity.InventoryAdjustmentStatus;
@@ -20,7 +20,6 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -44,18 +43,18 @@ public class InventoryOperationsServiceImpl implements InventoryOperationsServic
     private final InventoryTransactionRepository inventoryTransactionRepository;
     private final StocktakeItemRepository stocktakeItemRepository;
     private final InventoryAdjustmentItemRepository inventoryAdjustmentItemRepository;
-    private final EntityManager entityManager;
+    private final AppUserRepository appUserRepository;
 
     public InventoryOperationsServiceImpl(InventoryRepository inventoryRepository,
                                           InventoryTransactionRepository inventoryTransactionRepository,
                                           StocktakeItemRepository stocktakeItemRepository,
                                           InventoryAdjustmentItemRepository inventoryAdjustmentItemRepository,
-                                          EntityManager entityManager) {
+                                          AppUserRepository appUserRepository) {
         this.inventoryRepository = inventoryRepository;
         this.inventoryTransactionRepository = inventoryTransactionRepository;
         this.stocktakeItemRepository = stocktakeItemRepository;
         this.inventoryAdjustmentItemRepository = inventoryAdjustmentItemRepository;
-        this.entityManager = entityManager;
+        this.appUserRepository = appUserRepository;
     }
 
     @Override
@@ -79,18 +78,14 @@ public class InventoryOperationsServiceImpl implements InventoryOperationsServic
         long delta = sourceItem.getQuantity();
         long newQuantity = inventory.getQuantityOnHand() + delta;
         inventory.setQuantityOnHand(newQuantity);
-
         InventoryTransaction txn = BeanUtils.instantiateClass(InventoryTransaction.class);
         txn.setProduct(inventory.getProduct());
         txn.setTransactionType(InventoryTransactionType.PURCHASE_IN);
         txn.setQuantityDelta(delta);
         txn.setQuantityAfter(newQuantity);
         txn.setOccurredAt(occurredAt);
-        // CurrentActor chỉ mang userId/username (xem CurrentActor.java) — lấy proxy AppUser
-        // qua EntityManager.getReference, không query thêm, không cascade.
-        txn.setRecordedBy(entityManager.getReference(AppUser.class, actor.userId()));
+        txn.setRecordedBy(appUserRepository.getReferenceById(actor.userId()));
         txn.setPurchaseItem(sourceItem);
-
         return inventoryTransactionRepository.save(txn);
     }
 
@@ -103,8 +98,35 @@ public class InventoryOperationsServiceImpl implements InventoryOperationsServic
 
     @Override
     @Transactional
-    public InventoryTransaction applyReturnIn(SalesReturnItem sourceItem, long restockQuantity, CurrentActor actor, LocalDateTime occurredAt) {
-        throw new UnsupportedOperationException("applyReturnIn: chưa triển khai");
+    public InventoryTransaction applyReturnIn(SalesReturnItem sourceItem, CurrentActor actor, LocalDateTime occurredAt) {
+        // restock_quantity đã là field thật trên sales_return_item (0 <= restock_quantity <= quantity,
+        // xem SalesReturnItem.java) — đọc trực tiếp từ Entity, KHÔNG nhận lại qua tham số riêng,
+        // để tránh lệch giữa giá trị caller truyền vào và giá trị đã lưu trong DB.
+        long restockQuantity = sourceItem.getRestockQuantity();
+        if (restockQuantity <= 0) {
+            throw new IllegalArgumentException("sourceItem.getRestockQuantity() must be > 0; caller must skip the call otherwise");
+        }
+        var existing = inventoryTransactionRepository.findBySalesReturnItemId(sourceItem.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        Long productId = sourceItem.getSalesOrderItem().getProduct().getId();
+        Inventory inventory = inventoryRepository.findByProductIdForUpdate(productId)
+                .orElseThrow(() -> InventoryErrors.inventoryRowNotFound(productId));
+
+        assertNotBlockedByStocktakeOrAdjustment(productId);
+
+        long newQuantity = inventory.getQuantityOnHand() + restockQuantity;
+        inventory.setQuantityOnHand(newQuantity);
+        InventoryTransaction txn = BeanUtils.instantiateClass(InventoryTransaction.class);
+        txn.setProduct(inventory.getProduct());
+        txn.setTransactionType(InventoryTransactionType.RETURN_IN);
+        txn.setQuantityDelta(restockQuantity);
+        txn.setQuantityAfter(newQuantity);
+        txn.setOccurredAt(occurredAt);
+        txn.setRecordedBy(appUserRepository.getReferenceById(actor.userId()));
+        txn.setSalesReturnItem(sourceItem);
+        return inventoryTransactionRepository.save(txn);
     }
 
     @Override

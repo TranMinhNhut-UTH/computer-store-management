@@ -24,8 +24,7 @@ public interface InventoryOperationsService {
     List<InventoryTransaction> applySaleOut(List<SalesOrderItem> sourceItems, CurrentActor actor, LocalDateTime occurredAt);
 
     /** Không gọi nếu restockQuantity == 0 (tránh insert quantity_delta = 0, vi phạm CHECK). */
-    InventoryTransaction applyReturnIn(SalesReturnItem sourceItem, long restockQuantity, CurrentActor actor, LocalDateTime occurredAt);
-
+    InventoryTransaction applyReturnIn(SalesReturnItem sourceItem, CurrentActor actor, LocalDateTime occurredAt);
     /** Loại suy ra từ dấu quantityDelta của sourceItem: dương -> ADJUSTMENT_IN, âm -> ADJUSTMENT_OUT. */
     InventoryTransaction applyAdjustment(InventoryAdjustmentItem sourceItem, CurrentActor actor, LocalDateTime occurredAt);
 

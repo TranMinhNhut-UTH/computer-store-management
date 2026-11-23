@@ -3,6 +3,7 @@ package com.computerstore.computer_store_backend.inventory.service;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
 import com.computerstore.computer_store_backend.identity.authorization.CurrentActor;
 import com.computerstore.computer_store_backend.identity.entity.AppUser;
+import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import com.computerstore.computer_store_backend.inventory.entity.Inventory;
 import com.computerstore.computer_store_backend.inventory.entity.InventoryAdjustmentStatus;
 import com.computerstore.computer_store_backend.inventory.entity.InventoryTransaction;
@@ -13,9 +14,9 @@ import com.computerstore.computer_store_backend.inventory.repository.InventoryRe
 import com.computerstore.computer_store_backend.inventory.repository.InventoryTransactionRepository;
 import com.computerstore.computer_store_backend.inventory.repository.StocktakeItemRepository;
 import com.computerstore.computer_store_backend.purchasing.entity.PurchaseItem;
+import com.computerstore.computer_store_backend.sales.entity.SalesReturnItem;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
-import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,12 +60,16 @@ class InventoryOperationsServiceImplTest {
     @Mock
     private InventoryAdjustmentItemRepository inventoryAdjustmentItemRepository;
     @Mock
-    private EntityManager entityManager;
+    private AppUserRepository appUserRepository;
 
     @Mock
     private Product product;
     @Mock
     private PurchaseItem purchaseItem;
+    @Mock
+    private SalesReturnItem salesReturnItem;
+    @Mock
+    private com.computerstore.computer_store_backend.sales.entity.SalesOrderItem salesOrderItem;
     @Mock
     private AppUser appUserReference;
 
@@ -78,7 +83,7 @@ class InventoryOperationsServiceImplTest {
     void setUp() {
         service = new InventoryOperationsServiceImpl(
                 inventoryRepository, inventoryTransactionRepository,
-                stocktakeItemRepository, inventoryAdjustmentItemRepository, entityManager);
+                stocktakeItemRepository, inventoryAdjustmentItemRepository, appUserRepository);
 
         // Entity thật có protected constructor — khởi tạo đúng cách bootstrap đã thống nhất
         // (xem CategoryService.create()), không mock Inventory để setQuantityOnHand thao tác
@@ -106,7 +111,7 @@ class InventoryOperationsServiceImplTest {
                 eq(PRODUCT_ID), eq(StocktakeStatus.IN_PROGRESS))).thenReturn(false);
         when(inventoryAdjustmentItemRepository.existsByProductIdAndAdjustment_Status(
                 eq(PRODUCT_ID), eq(InventoryAdjustmentStatus.PENDING))).thenReturn(false);
-        when(entityManager.getReference(eq(AppUser.class), anyLong())).thenReturn(appUserReference);
+        when(appUserRepository.getReferenceById(anyLong())).thenReturn(appUserReference);
         when(inventoryTransactionRepository.save(any(InventoryTransaction.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -181,5 +186,68 @@ class InventoryOperationsServiceImplTest {
 
         assertEquals(ErrorCode.RESOURCE_NOT_FOUND, exception.code());
         verify(inventoryTransactionRepository, never()).save(any());
+    }
+
+    // ----- applyReturnIn -----
+
+    private static final Long SALES_RETURN_ITEM_ID = 15L;
+    private static final long RESTOCK_QUANTITY = 3L;
+
+    @Test
+    void applyReturnIn_createsTransactionAndIncreasesQuantity() {
+        when(product.getId()).thenReturn(PRODUCT_ID);
+        when(salesReturnItem.getId()).thenReturn(SALES_RETURN_ITEM_ID);
+        when(salesReturnItem.getRestockQuantity()).thenReturn(RESTOCK_QUANTITY);
+        when(salesReturnItem.getSalesOrderItem()).thenReturn(salesOrderItem);
+        when(salesOrderItem.getProduct()).thenReturn(product);
+
+        when(inventoryTransactionRepository.findBySalesReturnItemId(SALES_RETURN_ITEM_ID))
+                .thenReturn(Optional.empty());
+        when(inventoryRepository.findByProductIdForUpdate(PRODUCT_ID))
+                .thenReturn(Optional.of(inventory));
+        when(stocktakeItemRepository.existsByProductIdAndCountedAtIsNullAndStocktake_Status(
+                eq(PRODUCT_ID), eq(StocktakeStatus.IN_PROGRESS))).thenReturn(false);
+        when(inventoryAdjustmentItemRepository.existsByProductIdAndAdjustment_Status(
+                eq(PRODUCT_ID), eq(InventoryAdjustmentStatus.PENDING))).thenReturn(false);
+        when(appUserRepository.getReferenceById(anyLong())).thenReturn(appUserReference);
+        when(inventoryTransactionRepository.save(any(InventoryTransaction.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        InventoryTransaction result = service.applyReturnIn(salesReturnItem, actor, occurredAt);
+
+        assertEquals(INITIAL_QUANTITY + RESTOCK_QUANTITY, inventory.getQuantityOnHand());
+
+        ArgumentCaptor<InventoryTransaction> captor = ArgumentCaptor.forClass(InventoryTransaction.class);
+        verify(inventoryTransactionRepository).save(captor.capture());
+        InventoryTransaction saved = captor.getValue();
+
+        assertEquals(InventoryTransactionType.RETURN_IN, saved.getTransactionType());
+        assertEquals(RESTOCK_QUANTITY, saved.getQuantityDelta());
+        assertEquals(INITIAL_QUANTITY + RESTOCK_QUANTITY, saved.getQuantityAfter());
+        assertSame(salesReturnItem, saved.getSalesReturnItem());
+        assertSame(saved, result);
+    }
+
+    @Test
+    void applyReturnIn_rejectsZeroOrNegativeRestockQuantity() {
+        when(salesReturnItem.getRestockQuantity()).thenReturn(0L);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.applyReturnIn(salesReturnItem, actor, occurredAt));
+        verify(inventoryTransactionRepository, never()).findBySalesReturnItemId(any());
+    }
+
+    @Test
+    void applyReturnIn_isIdempotent_returnsExistingTransaction() {
+        InventoryTransaction existing = BeanUtils.instantiateClass(InventoryTransaction.class);
+        when(salesReturnItem.getRestockQuantity()).thenReturn(RESTOCK_QUANTITY);
+        when(salesReturnItem.getId()).thenReturn(SALES_RETURN_ITEM_ID);
+        when(inventoryTransactionRepository.findBySalesReturnItemId(SALES_RETURN_ITEM_ID))
+                .thenReturn(Optional.of(existing));
+
+        InventoryTransaction result = service.applyReturnIn(salesReturnItem, actor, occurredAt);
+
+        assertSame(existing, result);
+        verify(inventoryRepository, never()).findByProductIdForUpdate(any());
     }
 }

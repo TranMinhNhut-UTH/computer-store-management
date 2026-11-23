@@ -68,21 +68,17 @@ association trong code là LAZY, không cascade.
 - **Output:** `List<InventoryTransaction>`, 1 phần tử / dòng đơn.
 - **Error:** `InsufficientStockException` (409 `INSUFFICIENT_STOCK`), `SkuLockedByStocktakeException` (409).
 
-### 2.3. `applyReturnIn(SalesReturnItem item, long restockQuantity, AppUser actor, LocalDateTime occurredAt)`
+### 2.3. `applyReturnIn(SalesReturnItem item, CurrentActor actor, LocalDateTime occurredAt)`
 
-- **Input:** `restockQuantity` đã được Service tính theo kết quả kiểm tra hàng trả (0 nếu hàng
-  lỗi/không bán lại được).
-- **Quy tắc đặc biệt (database-design.md §5):** nếu `restockQuantity == 0` → **không gọi** operation
-  này, không tạo transaction (vì số dư không đổi — đã ghi rõ trong design, tránh tạo
-  `InventoryTransaction` với `quantity_delta = 0` vi phạm CHECK `ck_inventory_transaction_delta`).
-- **Precondition:** service phải tự xác nhận `item` (qua `sales_order_item`) có `product`
-  khớp với `product` đang thao tác — DB không enforce composite FK này (ghi rõ ở
-  database-design.md §2: *"database kiểm tra FK nguồn tồn tại nhưng service phải xác nhận
-  product_id khớp"*).
-- **Side effect:** `quantity_on_hand += restockQuantity`; insert `RETURN_IN` với
-  `quantity_delta = +restockQuantity` (phải đúng bằng `restockQuantity`, không phải
-  `item.quantity` gốc).
-- **Output:** `InventoryTransaction`.
+- **Input:** `restockQuantity` đọc trực tiếp từ `item.getRestockQuantity()` — đây là field
+  thật trên `sales_return_item` (CHECK `0 <= restock_quantity <= quantity`), KHÔNG nhận qua
+  tham số riêng như thiết kế ban đầu, để tránh lệch giữa giá trị Service truyền và giá trị
+  đã lưu trong DB.
+- **Lấy product:** `item.getSalesOrderItem().getProduct()` — `SalesReturnItem` không có
+  `product` trực tiếp.
+- **Quy tắc đặc biệt:** nếu `restockQuantity <= 0` → ném `IllegalArgumentException` (lỗi lập
+  trình của caller, không phải lỗi nghiệp vụ) — `SalesReturnService` phải tự kiểm tra trước,
+  không được gọi vào đây khi `restockQuantity == 0`.
 
 ### 2.4. `applyAdjustment(InventoryAdjustmentItem item, AppUser actor, LocalDateTime occurredAt)`
 
