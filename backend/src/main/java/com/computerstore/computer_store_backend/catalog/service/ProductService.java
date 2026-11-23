@@ -12,6 +12,7 @@ import com.computerstore.computer_store_backend.catalog.repository.ProductReposi
 import com.computerstore.computer_store_backend.identity.authorization.PermissionPolicy;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.math.BigDecimal;
@@ -20,8 +21,6 @@ import java.time.ZoneOffset;
 import java.util.Objects;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,12 +46,11 @@ public class ProductService {
     public ProductPageResponse list(String query, Boolean active, String categoryId, int page, int size) {
         var allowedActions = permissions.availableActions(PRODUCT_READ,
                 PRODUCT_UPDATE, PRODUCT_PRICE_UPDATE, PRODUCT_DEACTIVATE);
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) throw invalid();
+        var pagination = ListPagination.request(page, size, "name", ProductService::invalid);
         var q = text(query, 200, false);
         var pattern = q == null || q.isEmpty() ? null :
                 "%" + q.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        var result = products.search(pattern, active, categoryId == null ? null : id(categoryId),
-                PageRequest.of(page, size, Sort.by("name", "id")));
+        var result = products.search(pattern, active, categoryId == null ? null : id(categoryId), pagination);
         return new ProductPageResponse(result.getContent().stream().map(ProductService::response).toList(),
                 result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(), allowedActions);
     }

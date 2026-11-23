@@ -137,6 +137,17 @@ class StaffManagementIT {
         var empty = expect(200, admin.read(STAFF + "?q=missing"));
         assertEquals(0, empty.get("totalElements").asInt());
         assertEquals(0, empty.get("items").size());
+        var secondPage = expect(200, admin.read(STAFF + "?page=1&size=1"));
+        assertEquals(1, secondPage.get("page").asInt());
+        assertEquals(1, secondPage.get("size").asInt());
+        assertEquals(1, secondPage.get("items").size());
+        assertEquals("admin.two", secondPage.get("items").get(0).get("username").asString());
+        var beyondLastPage = expect(200, admin.read(STAFF + "?page=5&size=1"));
+        assertEquals(5, beyondLastPage.get("page").asInt());
+        assertEquals(5, beyondLastPage.get("totalPages").asInt());
+        assertEquals(0, beyondLastPage.get("items").size());
+        assertEquals("VALIDATION_ERROR", expect(400, admin.read(STAFF + "?size=101")).get("code").asString());
+        assertEquals("VALIDATION_ERROR", expect(400, admin.read(STAFF + "?page=2147483647&size=2")).get("code").asString());
         expect(403, admin.send("POST", STAFF, create("csrf-check", null, List.of("MANAGER")), null));
 
         db.update("DELETE rp FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE p.code='EMPLOYEE_ROLE_ASSIGN'");

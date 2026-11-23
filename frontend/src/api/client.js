@@ -8,6 +8,16 @@ export class ApiError extends Error {
   }
 }
 
+export function validateListPage(data, requestedPage, requestedSize) {
+  if (!Array.isArray(data?.items)
+      || !['page', 'size', 'totalElements', 'totalPages'].every(field => Number.isSafeInteger(data[field]) && data[field] >= 0)
+      || data.size < 1 || data.size > 100 || data.items.length > data.size
+      || data.page !== Number(requestedPage) || data.size !== Number(requestedSize)
+      || data.page * data.size > 2_147_483_647) {
+    throw new ApiError(502)
+  }
+}
+
 let activeSession = null
 
 // Requests remember the session that was current when they were sent.

@@ -1,5 +1,5 @@
 import { createAuthClient } from './auth.js'
-import { ApiError, createApiTransport } from './client.js'
+import { ApiError, createApiTransport, validateListPage } from './client.js'
 
 const BASE = '/api/v1/categories'
 function category(value) {
@@ -36,8 +36,7 @@ export function createCategoryClient(fetchRequest = globalThis.fetch.bind(global
       if (q) params.set('q', q)
       if (active !== '') params.set('active', String(active))
       const data = await request(`${BASE}?${params}`, options)
-      if (!Array.isArray(data?.items) || !['page', 'size', 'totalElements', 'totalPages'].every(key => Number.isSafeInteger(data[key]) && data[key] >= 0)
-          || data.size < 1 || data.size > 100 || data.items.length > data.size) throw new ApiError(502)
+      validateListPage(data, page, size)
       return { ...data, items: data.items.map(category) }
     },
     async detail(id, options = {}) { return category(await request(path(id), options)) },

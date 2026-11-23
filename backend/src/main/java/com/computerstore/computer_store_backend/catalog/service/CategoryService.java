@@ -9,6 +9,7 @@ import com.computerstore.computer_store_backend.identity.authorization.Permissio
 import com.computerstore.computer_store_backend.identity.authorization.PermissionPolicy;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +19,6 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,11 +37,11 @@ public class CategoryService {
 
     public CategoryPageResponse list(String query, Boolean active, int page, int size) {
         permissions.requirePermission(PermissionCode.CATEGORY_READ.code());
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) throw invalid();
+        var pagination = ListPagination.request(page, size, "name", CategoryService::invalid);
         var search = text(query, 120, false);
         var pattern = search == null || search.isEmpty() ? null
                 : "%" + search.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        var result = categories.search(pattern, active, PageRequest.of(page, size, Sort.by("name", "id")));
+        var result = categories.search(pattern, active, pagination);
         return new CategoryPageResponse(result.getContent().stream().map(CategoryService::response).toList(),
                 result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages());
     }

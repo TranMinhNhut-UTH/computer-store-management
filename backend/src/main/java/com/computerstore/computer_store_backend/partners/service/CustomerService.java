@@ -8,6 +8,7 @@ import com.computerstore.computer_store_backend.partners.entity.Customer;
 import com.computerstore.computer_store_backend.partners.repository.CustomerRepository;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.nio.charset.StandardCharsets;
@@ -16,8 +17,6 @@ import java.util.Objects;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +38,10 @@ public class CustomerService {
 
     public CustomerPageResponse list(String q, Boolean active, int page, int size) {
         var actions = permissions.availableActions(CUSTOMER_READ, CUSTOMER_CREATE, CUSTOMER_UPDATE);
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) throw invalid();
+        var pagination = ListPagination.request(page, size, "fullName", CustomerService::invalid);
         var query = text(q, 200);
         var pattern = query == null ? null : "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        var result = customers.search(pattern, active, PageRequest.of(page, size, Sort.by("fullName", "id")));
+        var result = customers.search(pattern, active, pagination);
         return new CustomerPageResponse(result.map(CustomerService::response).getContent(),
                 result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(), actions);
     }

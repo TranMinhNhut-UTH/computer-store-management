@@ -1,5 +1,5 @@
 import { createAuthClient } from './auth.js'
-import { ApiError, createApiTransport } from './client.js'
+import { ApiError, createApiTransport, validateListPage } from './client.js'
 
 const base = '/api/v1/employees'
 export const staffRoles = ['ADMIN', 'MANAGER', 'SALES_STAFF', 'WAREHOUSE_STAFF']
@@ -35,13 +35,13 @@ export function createStaffClient(fetchRequest = globalThis.fetch.bind(globalThi
 
   return {
     async list({ q = '', active = '', page = 0 } = {}, options) {
-      const params = new URLSearchParams({ page: String(page), size: '20' })
+      const size = 20
+      const params = new URLSearchParams({ page: String(page), size: String(size) })
       if (q) params.set('q', q)
       if (active !== '') params.set('active', active)
       const data = await request(base + '?' + params, options)
-      if (!Array.isArray(data?.items) || !['page','size','totalElements','totalPages'].every(key => Number.isSafeInteger(data[key]) && data[key] >= 0)
-          || data.size < 1 || data.items.length > data.size) throw new ApiError(502)
-      const { page: current, size, totalElements, totalPages } = data
+      validateListPage(data, page, size)
+      const { page: current, totalElements, totalPages } = data
       return { items: data.items.map(staff), page: current, size, totalElements, totalPages,
         allowedActions: hints.filter(code => Array.isArray(data.allowedActions) && data.allowedActions.includes(code)) }
     },
