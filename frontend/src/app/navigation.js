@@ -2,8 +2,8 @@
 export const navigationGroups = [
   { label: 'Không gian làm việc', items: [{ id: 'overview', label: 'Tổng quan' }] },
   { label: 'Dữ liệu danh mục', items: [
-    { id: 'categories', label: 'Danh mục' }, { id: 'products', label: 'Sản phẩm' },
-    { id: 'suppliers', label: 'Nhà cung cấp' }, { id: 'customers', label: 'Khách hàng' },
+    { id: 'categories', label: 'Danh mục', permission: 'CATEGORY_READ' }, { id: 'products', label: 'Sản phẩm', permission: 'PRODUCT_READ' },
+    { id: 'suppliers', label: 'Nhà cung cấp', permission: 'SUPPLIER_READ' }, { id: 'customers', label: 'Khách hàng', permission: 'CUSTOMER_READ' },
   ] },
   { label: 'Giao dịch & kho', items: [
     { id: 'inventory', label: 'Kho hàng' }, { id: 'purchases', label: 'Nhập hàng' },

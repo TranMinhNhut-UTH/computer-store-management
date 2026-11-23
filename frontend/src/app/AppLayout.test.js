@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
-let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse
+let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -37,6 +37,7 @@ before(async () => {
     if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
+    if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
@@ -54,6 +55,7 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/')
   authenticated = false
   reportAccess = false
+  capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   viewportWidth = 1440
   mediaQueries.clear()
@@ -159,19 +161,27 @@ test('the authenticated shell navigates between Category, Product, Supplier and 
   assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 1)
 })
 
-test('me-confirmed user sees shell and navigation changes only coming-soon content', async () => {
+test('sidebar uses server read grants and unfinished modules are absent from navigation', async () => {
   authenticated = true
+  capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'CATEGORY_UPDATE']
+  window.history.replaceState(null, '', '/inventory')
   await render()
-  assert.ok(container.querySelector('[data-app-shell]'))
   assert.ok(container.querySelector('.csm-username').textContent.includes('test-employee'))
-  assert.equal(container.querySelector('#password'), null)
-  await click(container.querySelector('aside [data-nav-id="inventory"]'))
-  assert.equal(container.querySelector('#page-title').textContent, '\u004bho h\u00e0ng')
-  assert.equal(container.querySelector('aside [aria-current="page"]').dataset.navId, 'inventory')
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'categories', 'products'])
+  assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
   assert.match(container.querySelector('.csm-empty').textContent, /Chưa|chưa/)
   assert.ok(requests.every(request => request.url.includes('/auth/') || request.url.endsWith('/reports/access')))
-  assert.equal(container.textContent.includes('Admin'), false)
+  assert.equal(container.querySelector('#password'), null)
   assert.equal(container.textContent.includes('test-token'), false)
+})
+
+test('signed-in account without read grants sees only overview even if an action is granted', async () => {
+  authenticated = true
+  capabilities = ['CATEGORY_UPDATE']
+  await render()
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview'])
+  assert.match(container.querySelector('main').textContent, /chưa có quyền/)
+  assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
 })
 
 test('theme toggles persist across shell navigation', async () => {
@@ -180,7 +190,7 @@ test('theme toggles persist across shell navigation', async () => {
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
-  await click(container.querySelector('aside [data-nav-id="employees"]'))
+  await click(container.querySelector('aside [data-nav-id="categories"]'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'light')
@@ -236,12 +246,12 @@ test('drawer close button, backdrop and navigation close the drawer', async () =
   await click(dialog)
   assert.equal(dialog.open, false)
   await click(opener)
-  await click(dialog.querySelector('[data-nav-id="sales"]'))
+  await click(dialog.querySelector('[data-nav-id="suppliers"]'))
   assert.equal(dialog.open, false)
-  assert.equal(container.querySelector('#page-title').textContent, 'Bán hàng')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý nhà cung cấp')
   assert.equal(document.activeElement, container.querySelector('main'))
   await click(opener)
-  assert.equal(dialog.querySelector('[aria-current="page"]').dataset.navId, 'sales')
+  assert.equal(dialog.querySelector('[aria-current="page"]').dataset.navId, 'suppliers')
 })
 
 test('desktop hamburger collapses and expands one sidebar, preserves selection and never opens a drawer', async () => {
@@ -254,14 +264,14 @@ test('desktop hamburger collapses and expands one sidebar, preserves selection a
   assert.equal(toggle.getAttribute('aria-controls'), 'application-navigation')
   assert.equal(toggle.hasAttribute('aria-haspopup'), false)
   assert.equal(container.querySelector('dialog'), null)
-  await click(container.querySelector('[data-nav-id="inventory"]'))
+  await click(container.querySelector('[data-nav-id="products"]'))
   await click(toggle)
   assert.equal(shell.classList.contains('csm-shell--collapsed'), true)
   assert.equal(toggle.getAttribute('aria-label'), 'Mở rộng điều hướng')
   assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   assert.equal(container.querySelectorAll('nav').length, 1)
   assert.equal(container.querySelectorAll('.csm-nav-label').length, 0)
-  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'inventory')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'products')
   for (const button of container.querySelectorAll('[data-nav-id]')) {
     assert.ok(button.getAttribute('aria-label'))
     assert.equal(button.title, button.getAttribute('aria-label'))
@@ -269,8 +279,8 @@ test('desktop hamburger collapses and expands one sidebar, preserves selection a
   }
   await click(toggle)
   assert.equal(shell.classList.contains('csm-shell--collapsed'), false)
-  assert.equal(container.querySelectorAll('[data-nav-id]').length, 15)
-  assert.equal(container.querySelectorAll('.csm-nav-label').length, 15)
+  assert.equal(container.querySelectorAll('[data-nav-id]').length, 6)
+  assert.equal(container.querySelectorAll('.csm-nav-label').length, 6)
   assert.equal(container.querySelector('nav').textContent.includes('Chưa triển khai'), false)
   assert.equal(container.querySelector('dialog'), null)
   assert.equal(document.body.style.overflow, '')
@@ -325,25 +335,26 @@ test('resizing an open mobile drawer restores scrolling and focus without reopen
   document.body.style.overflow = ''
 })
 
-test('theme and selection survive sidebar toggles and mobile navigation without extra auth or business requests', async () => {
+test('theme and selection survive sidebar toggles and mobile navigation without reloading grants or refetching on resize', async () => {
   authenticated = true
   await render()
   const startupRequests = requests.length
   await click(container.querySelector('.theme-toggle'))
   await click(container.querySelector('.csm-menu-toggle'))
-  await click(container.querySelector('[data-nav-id="employees"]'))
+  await click(container.querySelector('[data-nav-id="customers"]'))
   await resizeViewport(900)
   assert.equal(document.documentElement.dataset.theme, 'dark')
-  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'employees')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'customers')
   await resizeViewport(390)
   await click(container.querySelector('.csm-menu-toggle'))
-  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'employees')
-  await click(container.querySelector('dialog [data-nav-id="inventory"]'))
-  assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
+  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'customers')
+  await click(container.querySelector('dialog [data-nav-id="overview"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Tổng quan')
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.length, 1)
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
-  assert.equal(requests.length, startupRequests)
+  assert.equal(requests.length, startupRequests + 1)
+  assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
 })
 
 test('logout keeps CSRF headers then returns to Login and refreshes token', async () => {

@@ -40,10 +40,10 @@ after(async () => { await server.close(); dom.window.close() })
 
 const button = label => [...container.querySelectorAll('button')].find(item => item.textContent === label)
 const byLabel = label => container.querySelector(`button[aria-label="${label}"]`)
-async function render(allowedActions = []) {
+async function render(allowedActions = [], permissions = []) {
   const list = client.list
   client.list = async (...args) => ({ ...await list(...args), allowedActions })
-  await act(async () => root.render(createElement(ProductPage, { client, categories })))
+  await act(async () => root.render(createElement(ProductPage, { client, categories, permissions })))
 }
 async function click(el) { assert.ok(el); await act(async () => el.click()) }
 async function change(selector, value) {
@@ -59,11 +59,12 @@ async function submit() {
     new window.Event('submit', { bubbles: true, cancelable: true })))
 }
 
-test('Product renders list and detail for read-only staff with all writes disabled', async () => {
+test('Product renders list and detail for read-only staff with write actions hidden', async () => {
   await render()
   assert.match(container.querySelector('tbody').textContent, /9\.999\.999\.999\.999\.999\.999/)
   assert.match(container.querySelector('tbody').textContent, /13:45 22\/11\/2026/)
-  for (const name of ['Sửa sản phẩm CPU', 'Đổi giá bán CPU', 'Ngừng kinh doanh CPU']) assert.ok(byLabel(name).disabled)
+  for (const name of ['Sửa sản phẩm CPU', 'Đổi giá bán CPU', 'Ngừng kinh doanh CPU']) assert.equal(byLabel(name), null)
+  assert.equal(button('Xem biểu mẫu tạo'), undefined)
   await click(byLabel('Xem sản phẩm CPU'))
   assert.match(container.querySelector('dialog').textContent, /Linh kiện.*Brand.*M1/s)
   assert.deepEqual(calls.at(-1), ['detail', product.id])
@@ -72,9 +73,8 @@ test('Product renders list and detail for read-only staff with all writes disabl
 test('Product enables only the specific write action reported by the server', async () => {
   await render(['PRODUCT_UPDATE'])
   assert.equal(byLabel('Sửa sản phẩm CPU').disabled, false)
-  assert.equal(byLabel('Đổi giá bán CPU').disabled, true)
-  assert.equal(byLabel('Ngừng kinh doanh CPU').disabled, true)
-  await click(byLabel('Đổi giá bán CPU'))
+  assert.equal(byLabel('Đổi giá bán CPU'), null)
+  assert.equal(byLabel('Ngừng kinh doanh CPU'), null)
   assert.equal(container.querySelector('dialog'), null)
 })
 
@@ -95,7 +95,7 @@ test('Product search debounces and status filter applies immediately with pagina
 })
 
 test('Product creation form is inspectable but cannot submit without DEP-001', async () => {
-  await render([...allWrites, 'PRODUCT_CREATE'])
+  await render(allWrites, ['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
   await click(button('Xem biểu mẫu tạo'))
   assert.ok(container.querySelector('dialog [name=sku]'))
   assert.ok(container.querySelector('dialog [name=sellingPrice]'))
