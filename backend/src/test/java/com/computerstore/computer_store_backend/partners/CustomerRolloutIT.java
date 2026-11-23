@@ -5,17 +5,20 @@ import com.computerstore.computer_store_backend.operations.category.v1.V3__grant
 import com.computerstore.computer_store_backend.operations.product.v1.V4__register_product_permissions;
 import com.computerstore.computer_store_backend.operations.product.v1.V5__grant_product_permissions;
 import com.computerstore.computer_store_backend.partners.SupplierPermissionRolloutIT.DisposableMysql;
+import com.computerstore.computer_store_backend.operations.customer.v1.CustomerPermissionMigrationRunner;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -41,7 +44,7 @@ class CustomerRolloutIT {
             assertThrows(DataAccessException.class, () -> db.execute(script("V9__grant_customer_permissions.sql")));
             assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM permission", Integer.class));
 
-            assertEquals(1, flyway(source, "8").migrate().migrationsExecuted);
+            assertEquals(1, runControlledStage(source, "A").migrate().migrationsExecuted);
             assertEquals(List.of("CUSTOMER_CREATE", "CUSTOMER_READ", "CUSTOMER_UPDATE"), db.queryForList("""
                     SELECT code FROM permission WHERE CAST(name AS BINARY)=CAST(code AS BINARY)
                       AND description IS NULL ORDER BY code
@@ -49,7 +52,7 @@ class CustomerRolloutIT {
             assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM role_permission", Integer.class));
             assertThrows(DataAccessException.class, () -> db.execute(script("V8__register_customer_permissions.sql")));
 
-            assertEquals(1, flyway(source, "9").migrate().migrationsExecuted);
+            assertEquals(1, runControlledStage(source, "B").migrate().migrationsExecuted);
             assertEquals(List.of("MANAGER:CUSTOMER_READ", "SALES_STAFF:CUSTOMER_CREATE", "SALES_STAFF:CUSTOMER_READ",
                     "SALES_STAFF:CUSTOMER_UPDATE"), db.queryForList("""
                     SELECT CONCAT(r.code, ':', p.code) FROM role_permission rp
@@ -83,6 +86,18 @@ class CustomerRolloutIT {
         assertEquals(before, db.queryForList("SELECT * FROM sales_order ORDER BY id"));
         assertThrows(DataIntegrityViolationException.class, () -> db.update("DELETE FROM customer WHERE id=7"));
         assertThrows(DataIntegrityViolationException.class, () -> db.update("UPDATE customer SET code='EDITED' WHERE id=8"));
+    }
+
+    private static Flyway runControlledStage(MysqlDataSource source, String name) {
+        var stage = ReflectionTestUtils.invokeMethod(CustomerPermissionMigrationRunner.class, "stage",
+                (Object) new String[]{"--customer-permission-rollout", "--confirm-target=computer_store_dev", "--stage=" + name});
+        org.flywaydb.core.api.migration.JavaMigration[] previous =
+                ReflectionTestUtils.invokeMethod(CustomerPermissionMigrationRunner.class, "previousMigrations");
+        FluentConfiguration configuration = ReflectionTestUtils.invokeMethod(
+                CustomerPermissionMigrationRunner.class, "configuration", stage, previous);
+        var flyway = configuration.dataSource(source).defaultSchema(SCHEMA).schemas(SCHEMA).load();
+        ReflectionTestUtils.invokeMethod(CustomerPermissionMigrationRunner.class, "verifyResolved", flyway.info().all(), stage);
+        return flyway;
     }
 
     private static Flyway flyway(MysqlDataSource source, String target) {

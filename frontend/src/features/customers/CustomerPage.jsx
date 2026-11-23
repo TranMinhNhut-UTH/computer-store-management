@@ -11,11 +11,7 @@ import { formatVietnameseDate } from '../../format/vietnameseDate.js'
 import { CategoryDialog } from '../categories/CategoryDialog.jsx'
 import '../categories/categories.css'
 
-const fields = [
-  ['code', 'Mã khách hàng', 50], ['fullName', 'Họ tên', 150],
-  ['phone', 'Điện thoại', 30, 'tel'], ['email', 'Email', 254, 'email'],
-  ['address', 'Địa chỉ', 500], ['notes', 'Ghi chú', 65_535],
-]
+const fields = [['code', 'Mã khách hàng', 50], ['fullName', 'Họ tên', 150]]
 const titles = { detail: 'Chi tiết khách hàng', create: 'Thêm khách hàng', edit: 'Sửa khách hàng' }
 const permissions = { create: 'CUSTOMER_CREATE', edit: 'CUSTOMER_UPDATE' }
 
@@ -84,12 +80,7 @@ export function CustomerPage({ client = customerClient }) {
     try {
       const record = await client.detail(id, { signal: controller.signal })
       if (controller.signal.aborted) return
-      if (action === 'edit' && !record.contact) {
-        setFailure({ status: 403 })
-        setDialog({ action })
-        return
-      }
-      setValues({ code: record.code, fullName: record.fullName, ...record.contact })
+      setValues({ code: record.code, fullName: record.fullName })
       setDialog({ action, record })
     } catch (error) {
       if (!controller.signal.aborted) { setFailure(error); setDialog({ action }) }
@@ -182,18 +173,14 @@ export function CustomerPage({ client = customerClient }) {
       {dialog.loading && <LoadingState label="Đang tải khách hàng…" />}
       {failure && <p role="alert" className="message message-error">{errorText(failure)}</p>}
       {action === 'detail' && record && <>
-        <dl>{fields.filter(([key]) => record.contact || key === 'code' || key === 'fullName')
-          .map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{(record[key] ?? record.contact?.[key]) || '—'}</dd></div>)}
+        <dl>{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{record[key]}</dd></div>)}
           <div><dt>Trạng thái</dt><dd>{status(record)}</dd></div>
         </dl>
         <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
       </>}
       {(action === 'create' || (action === 'edit' && record)) && <form onSubmit={submit} aria-busy={saving}>
-        <fieldset disabled={saving}>{fields.map(([key, label, maxLength, type]) =>
-            key === 'notes' ? <div key={key} className="csm-field"><label htmlFor="customer-notes">{label}</label>
-              <textarea id="customer-notes" name={key} rows={3} maxLength={maxLength} value={values[key] ?? ''}
-                onChange={event => setValues({ ...values, [key]: event.target.value })} /></div>
-              : <TextInput key={key} label={label} name={key} maxLength={maxLength} type={type ?? 'text'}
+        <fieldset disabled={saving}>{fields.map(([key, label, maxLength]) =>
+              <TextInput key={key} label={label} name={key} maxLength={maxLength}
                 required={key === 'code' || key === 'fullName'} value={values[key] ?? ''}
                 error={failure?.fields?.includes(key) ? 'Giá trị chưa hợp lệ.' : undefined}
                 data-initial-focus={key === 'code' || undefined}

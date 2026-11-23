@@ -118,14 +118,17 @@ class CustomerSecurityTest {
         when(grants.getResultList()).thenReturn(SALES_GRANTS);
         mvc.perform(get(BASE).with(user(principal))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value("7"))
+                .andExpect(jsonPath("$.items[0].contact").doesNotHaveJsonPath())
                 .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains(
                         "CUSTOMER_CREATE", "CUSTOMER_UPDATE")));
         mvc.perform(get(BASE + "/7").with(user(principal))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.contact.phone").value("0901234567"));
+                .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
         mvc.perform(mutations().get(0).with(user(principal)).with(csrf())).andExpect(status().isCreated())
-                .andExpect(header().string("Location", BASE + "/7"));
+                .andExpect(header().string("Location", BASE + "/7"))
+                .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
         mvc.perform(mutations().get(1).with(user(principal)).with(csrf())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.active").value(true));
+                .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
     }
 
     @Test void managerReadIsAllowedWithRedactedContactAndWritesAreDenied() throws Exception {
@@ -158,6 +161,19 @@ class CustomerSecurityTest {
         }
         for (var request : mutations()) {
             mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(customers);
+    }
+
+    @Test void evenSalesCannotSupplyAnyUnapprovedContactField() throws Exception {
+        when(roles.getResultList()).thenReturn(List.of("SALES_STAFF"));
+        when(grants.getResultList()).thenReturn(SALES_GRANTS);
+        for (String field : List.of("phone", "email", "address", "notes", "contact")) {
+            var body = BODY.substring(0, BODY.length() - 1) + ",\"" + field + "\":null}";
+            for (var request : List.of(post(BASE), put(BASE + "/7"))) {
+                mvc.perform(request.with(user(principal)).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                        .andExpect(status().isBadRequest());
+            }
         }
         verifyNoInteractions(customers);
     }

@@ -27,8 +27,7 @@ class CustomerServiceTest {
     static final long ID = 9007199254740993L;
     static final LocalDateTime CREATED = LocalDateTime.parse("2026-11-21T08:00:00");
     static final LocalDateTime NOW = CREATED.plusDays(1);
-    static final CustomerWriteRequest INPUT = new CustomerWriteRequest(" ac-01 ", " Việt Nam ",
-            " +84 123 ", " Contact@Example.vn ", " ", null);
+    static final CustomerWriteRequest INPUT = new CustomerWriteRequest(" ac-01 ", " Việt Nam ");
     private final CustomerRepository repo = mock(CustomerRepository.class);
     private final PermissionPolicy policy = mock(PermissionPolicy.class);
     private final UtcTimeProvider clock = mock(UtcTimeProvider.class);
@@ -62,60 +61,50 @@ class CustomerServiceTest {
         assertEquals(List.of("CUSTOMER_UPDATE"), result.allowedActions());
         assertEquals(Long.toString(ID), result.items().getFirst().id());
         assertEquals(1, result.totalElements());
-        assertNull(result.items().getFirst().contact());
         assertCode(ErrorCode.VALIDATION_ERROR, () -> service.list(null, null, Integer.MAX_VALUE, 100));
     }
 
-    @Test void createNormalizesCodeAndContactAndSetsAuditFields() {
+    @Test void createNormalizesCodeAndSetsAuditFields() {
         var result = service.create(INPUT);
         assertEquals("AC-01", result.code());
         assertEquals("Việt Nam", result.fullName());
-        assertEquals("+84 123", result.contact().phone());
-        assertEquals("Contact@Example.vn", result.contact().email());
-        assertNull(result.contact().address());
         assertTrue(result.active());
         assertEquals(result.createdAt(), result.updatedAt());
         verify(policy).requirePermission(CUSTOMER_CREATE.code());
     }
 
-    @Test void editPreservesInactiveStateAndCreationDateAndAcceptsOwnCode() {
+    @Test void editPreservesInactiveStateCreationDateAndAllContactFields() {
         var existing = customer();
         existing.setActive(false);
+        existing.setPhone("existing-phone");
+        existing.setEmail("existing-email");
+        existing.setAddress("existing-address");
+        existing.setNotes("existing-notes");
         when(repo.findForUpdate(ID)).thenReturn(Optional.of(existing));
         when(repo.findByCode("AC-01")).thenReturn(Optional.of(existing));
         assertFalse(service.update(Long.toString(ID), INPUT).active());
         assertEquals(CREATED, existing.getCreatedAt());
         assertEquals(NOW, existing.getUpdatedAt());
+        assertEquals("existing-phone", existing.getPhone());
+        assertEquals("existing-email", existing.getEmail());
+        assertEquals("existing-address", existing.getAddress());
+        assertEquals("existing-notes", existing.getNotes());
         verify(policy).requirePermission(CUSTOMER_UPDATE.code());
     }
 
-    @Test void duplicateCodeAndInvalidContactAreRejectedBeforeWrite() {
+    @Test void duplicateCodeAndInvalidIdentityAreRejectedBeforeWrite() {
         when(repo.findByCode("AC-01")).thenReturn(Optional.of(customer()));
         assertCode(ErrorCode.BUSINESS_CONFLICT, () -> service.create(INPUT));
-        assertCode(ErrorCode.VALIDATION_ERROR,
-                () -> service.create(new CustomerWriteRequest("X", "Name", "letters", null, null, null)));
-        assertCode(ErrorCode.VALIDATION_ERROR,
-                () -> service.create(new CustomerWriteRequest("X", "Name", null, "a b@example.vn", null, null)));
-        assertCode(ErrorCode.VALIDATION_ERROR,
-                () -> service.create(new CustomerWriteRequest("X", "Name", null, null, null, "ế".repeat(22000))));
+        assertCode(ErrorCode.VALIDATION_ERROR, () -> service.create(new CustomerWriteRequest("X", " ")));
+        assertCode(ErrorCode.VALIDATION_ERROR, () -> service.create(new CustomerWriteRequest("bad code", "Name")));
+        assertCode(ErrorCode.VALIDATION_ERROR, () -> service.create(new CustomerWriteRequest("X", "N".repeat(151))));
         verify(repo, never()).saveAndFlush(any());
     }
 
     @Test void detailRequiresReadAndValidId() {
         assertCode(ErrorCode.VALIDATION_ERROR, () -> service.detail("9223372036854775808"));
         assertCode(ErrorCode.RESOURCE_NOT_FOUND, () -> service.detail("7"));
-        verify(policy, times(2)).availableActions(CUSTOMER_READ, CUSTOMER_UPDATE);
-    }
-
-    @Test void detailShowsContactOnlyToActorsWithUpdatePermission() {
-        var row = customer();
-        row.setPhone("0987654321");
-        when(repo.findById(ID)).thenReturn(Optional.of(row));
-        when(policy.availableActions(CUSTOMER_READ, CUSTOMER_UPDATE)).thenReturn(List.of());
-        assertNull(service.detail(Long.toString(ID)).contact());
-
-        when(policy.availableActions(CUSTOMER_READ, CUSTOMER_UPDATE)).thenReturn(List.of("CUSTOMER_UPDATE"));
-        assertEquals("0987654321", service.detail(Long.toString(ID)).contact().phone());
+        verify(policy, times(2)).requirePermission(CUSTOMER_READ.code());
     }
 
     @Test void salesSelectionChecksActiveUnderLockWithoutMutatingTheCustomer() throws Exception {

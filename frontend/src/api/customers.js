@@ -3,19 +3,18 @@ import { ApiError, createApiTransport } from './client.js'
 
 const base = '/api/v1/customers'
 const idPattern = /^[1-9][0-9]{0,18}$/
-const fields = ['code', 'fullName', 'phone', 'email', 'address', 'notes']
+const fields = ['code', 'fullName']
 const actions = ['CUSTOMER_CREATE', 'CUSTOMER_UPDATE']
 
 function customer(value) {
   if (typeof value?.id !== 'string' || !idPattern.test(value.id)
       || !['code', 'fullName'].every(key => typeof value[key] === 'string')
-      || !(value.contact === null || (value.contact && fields.slice(2).every(key =>
-        value.contact[key] === null || typeof value.contact[key] === 'string')))
       || typeof value.active !== 'boolean'
       || !['createdAt', 'updatedAt'].every(key => typeof value[key] === 'string' && Number.isFinite(Date.parse(value[key])))) {
     throw new ApiError(502)
   }
-  return value
+  const { id, code, fullName, active, createdAt, updatedAt } = value
+  return { id, code, fullName, active, createdAt, updatedAt }
 }
 
 function path(id) {

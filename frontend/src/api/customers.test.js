@@ -13,6 +13,7 @@ test('Customer list sends filters and retains only known server action hints', a
   })
   const page = await client.list({ q: 'A & B', page: 1, active: false })
   assert.equal(page.items[0].id, customer.id)
+  assert.equal('contact' in page.items[0], false)
   assert.deepEqual(page.allowedActions, ['CUSTOMER_UPDATE'])
 })
 
@@ -26,7 +27,7 @@ test('Customer mutations project the DTO and obtain a fresh CSRF token per reque
   const form = { ...customer, ...customer.contact }
   await client.create(form)
   await client.update(customer.id, form)
-  const input = { code: 'AC-01', fullName: 'Khách thử nghiệm', phone: '+84 123', email: null, address: null, notes: null }
+  const input = { code: 'AC-01', fullName: 'Khách thử nghiệm' }
   assert.equal(requests.length, 4)
   for (const [index, suffix, method] of [[1, '', 'POST'], [3, '/' + customer.id, 'PUT']]) {
     assert.equal(requests[index - 1][0], '/api/v1/auth/csrf')

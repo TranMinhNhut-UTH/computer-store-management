@@ -72,17 +72,17 @@ test('Customer create and edit submit, refresh the list, and use the server ID',
   await submit()
   assert.deepEqual(calls.slice(-2), [['create', { code: 'NEW', fullName: 'Nhà phân phối' }], ['list', { q: '', active: '', page: 0 }]])
   await click(label('Sửa AC-01'))
-  assert.equal(container.querySelector('dialog [name=phone]').value, '+84 123')
-  await change(container.querySelector('dialog [name=phone]'), '12345')
+  assert.equal(container.querySelector('dialog [name=phone]'), null)
+  await change(container.querySelector('dialog [name=fullName]'), 'Tên đã sửa')
   await submit()
   const edit = calls.find(([type]) => type === 'update')
   assert.equal(edit[1], record.id)
-  assert.equal(edit[2].phone, '12345')
+  assert.deepEqual(edit[2], { code: record.code, fullName: 'Tên đã sửa' })
   assert.equal(container.querySelector('dialog'), null)
 })
 
-test('Revoked update permission blocks edit and missing rows show the empty state', async () => {
-  client.detail = async () => ({ ...record, contact: null })
+test('Denied detail blocks the edit form and missing rows show the empty state', async () => {
+  client.detail = async () => { throw { status: 403 } }
   await render()
   await click(label('Sửa AC-01'))
   assert.match(container.querySelector('dialog [role=alert]').textContent, /không có quyền/)
