@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
-let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities
+let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -36,6 +36,11 @@ before(async () => {
     requests.push({ url, options })
     if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
+    if (url.endsWith('/login')) {
+      if (!loginAccepted) return Response.json({ code: 'UNAUTHENTICATED' }, { status: 401 })
+      authenticated = true
+      return Response.json({ userId: '42', username: 'test-employee' })
+    }
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
     if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
@@ -45,7 +50,7 @@ before(async () => {
         ? Response.json({ items: [], page: 0, size: 20, totalPages: 0, totalElements: 0, allowedActions: [] })
         : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     }
-    if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.startsWith('/api/v1/categories')) return Response.json({ code: categoryStatus === 401 ? 'UNAUTHENTICATED' : 'ACCESS_DENIED' }, { status: categoryStatus })
     if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
@@ -59,6 +64,8 @@ beforeEach(() => {
   requests = []
   window.history.replaceState(null, '', '/')
   authenticated = false
+  categoryStatus = 403
+  loginAccepted = true
   reportAccess = false
   capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
@@ -459,4 +466,31 @@ test('staff navigation and deep links respect the server capability and API deni
   await render()
   assert.equal(container.querySelector('[data-nav-id=employees]'), null)
   assert.match(container.querySelector('.staff-page [role=alert]').textContent, /không có quyền/)
+})
+
+test('a protected 401 returns to sign-in and a fresh login resumes the same route without retrying the request', async () => {
+  authenticated = true
+  categoryStatus = 401
+  window.history.replaceState(null, '', '/categories')
+  await render()
+  assert.equal(container.querySelector('[data-app-shell]'), null)
+  assert.equal(window.location.pathname, '/categories')
+  assert.match(container.querySelector('#auth-error').textContent, /Phiên đăng nhập đã kết thúc/)
+  assert.equal(document.activeElement, container.querySelector('#username'))
+  assert.equal(requests.filter(entry => entry.url.startsWith('/api/v1/categories')).length, 1)
+  assert.equal(requests.filter(entry => entry.url.endsWith('/logout')).length, 0)
+
+  loginAccepted = false
+  const submit = () => act(async () => container.querySelector('form').dispatchEvent(
+    new window.Event('submit', { bubbles: true, cancelable: true })))
+  await submit()
+  assert.match(container.querySelector('#auth-error').textContent, /Không thể đăng nhập/)
+
+  loginAccepted = true
+  categoryStatus = 403
+  await submit()
+  assert.equal(window.location.pathname, '/categories')
+  assert.ok(container.querySelector('[data-app-shell]'))
+  assert.match(container.querySelector('.category-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(requests.filter(entry => entry.url.startsWith('/api/v1/categories')).length, 2)
 })

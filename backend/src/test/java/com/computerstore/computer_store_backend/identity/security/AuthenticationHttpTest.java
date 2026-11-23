@@ -1,12 +1,15 @@
 package com.computerstore.computer_store_backend.identity.security;
 
 import com.computerstore.computer_store_backend.HealthController;
+import com.computerstore.computer_store_backend.identity.authorization.CurrentActorService;
 import com.computerstore.computer_store_backend.identity.controller.AuthenticationController;
+import com.computerstore.computer_store_backend.identity.entity.AppUser;
 import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import com.computerstore.computer_store_backend.shared.error.GlobalExceptionHandler;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,12 +51,18 @@ class AuthenticationHttpTest {
     private static final String AUTH = "/api/v1/auth";
     private static final String BODY = "{\"username\":\" EMPLOYEE \",\"password\":\" password with spaces \"}";
     @Autowired WebApplicationContext context;
+    @Autowired AppUserRepository users;
     @MockitoBean(name = "employeeAuthenticationProvider") AuthenticationProvider provider;
     private MockMvc mvc;
     private final JsonMapper json = JsonMapper.builder().build();
 
     @BeforeEach void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        reset(users);
+        var account = mock(AppUser.class);
+        when(account.getActive()).thenReturn(true);
+        when(account.getUsername()).thenReturn("employee");
+        when(users.findById(9007199254740993L)).thenReturn(Optional.of(account));
         when(provider.supports(any())).thenReturn(true);
         when(provider.authenticate(any())).thenAnswer(invocation -> {
             Authentication input = invocation.getArgument(0);
@@ -114,6 +123,24 @@ class AuthenticationHttpTest {
                 .andExpect(jsonPath("$.sessionId").doesNotExist())
                 .andExpect(jsonPath("$.authorities").doesNotExist())
                 .andExpect(jsonPath("$.roles").doesNotExist());
+    }
+
+    @Test void meRechecksCurrentAccountOnTheExistingSession() throws Exception {
+        var session = login(csrf(null), BODY);
+        var account = users.findById(9007199254740993L).orElseThrow();
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+
+        when(account.getActive()).thenReturn(false);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.username").doesNotExist());
+        assertNotNull(session.getAttribute(
+                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY));
+
+        when(account.getActive()).thenReturn(true);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+        when(users.findById(9007199254740993L)).thenReturn(Optional.empty());
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized());
     }
 
     @Test void anonymousMeAndAnonymousLogoutWithValidCsrfReturn401() throws Exception {
@@ -276,6 +303,7 @@ class AuthenticationHttpTest {
     @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
             EmployeeUserDetailsService.class, AuthenticationSessionService.class, AuthenticationController.class,
+            CurrentActorService.class,
             GlobalExceptionHandler.class, HealthController.class})
     static class FixtureConfig {
         @Bean AppUserRepository appUserRepository() { return mock(AppUserRepository.class); }

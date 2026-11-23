@@ -90,3 +90,11 @@ Chạy lại riêng tests mới từ backend:
 ```
 
 Permission/role mapping runtime, seed rollout, API guards cụ thể và các scope/transaction/session/race còn PENDING; isolated PASS không chứng minh MySQL execution hoặc contract đã được approve.
+
+## Session recovery for IAM-003
+
+The approved FR-AUTH-01/02/04 boundary requires a valid employee account for protected access. `GET /api/v1/auth/me` now applies the same current-actor check as other protected APIs. A healthy session retains the existing `{userId, username}` DTO. Anonymous sessions and sessions tied to a missing, inactive or mismatched employee receive `401 UNAUTHENTICATED`. Identity still comes from the session principal and refreshed server data.
+
+If a protected request made by the current signed-in SPA session returns `401`, the app clears the workspace and shows the sign-in form on the same URL. The previous request is never replayed. Sign-in still fetches a fresh CSRF token and uses `/me` to confirm identity. A `403` or network error stays in the current view. Late responses from an older session or an aborted request cannot close the current session.
+
+The server retains the existing session on a rejected request. Unlock can make a still-valid cookie usable again, and effective grants are still recalculated on every guarded request. P01 remains open for session invalidation, timeout and concurrency policy. Staff account editing remains ADMIN-only. Self-service profile and password changes have no approved V1 contract and are outside this release.
