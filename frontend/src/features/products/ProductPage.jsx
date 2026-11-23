@@ -6,6 +6,9 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { ListError } from '../../components/ui/ListError.jsx'
+import { RecordFilters } from '../../components/ui/RecordFilters.jsx'
+import { RecordPagination } from '../../components/ui/RecordPagination.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { TextInput } from '../../components/ui/TextInput.jsx'
 import { CategoryDialog } from '../categories/CategoryDialog.jsx'
@@ -23,7 +26,7 @@ function errorMessage(failure, action) {
   switch (failure.status) {
     case 400: return 'Dữ liệu chưa hợp lệ. Vui lòng kiểm tra các trường.'
     case 401: return 'Phiên đăng nhập đã kết thúc. Vui lòng đăng nhập lại.'
-    case 403: return 'Truy cập bị từ chối. Sản phẩm có thể chưa được mở cho tài khoản này.'
+    case 403: return 'Truy cập bị từ chối. Tài khoản hiện không có quyền thực hiện thao tác này.'
     case 404: return 'Không tìm thấy sản phẩm hoặc danh mục đã chọn.'
     case 409: return action === 'create'
       ? 'Chưa thể tạo sản phẩm. Kiểm tra SKU, danh mục và điều kiện khởi tạo tồn kho.'
@@ -69,7 +72,7 @@ function CategoryPicker({ client, current, value, onChange, error }) {
   </div>
 }
 
-export function ProductPage({ client = productClient, categories = categoryClient }) {
+export function ProductPage({ client = productClient, categories = categoryClient, permissions = [] }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [refresh, refreshList] = useState(0)
@@ -87,6 +90,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   const settled = list?.query === query && list.refresh === refresh
   const result = settled ? list.result : null
   const error = settled ? list.error : null
+  const canPreviewCreate = Boolean(result && permissions.includes('PRODUCT_CREATE') && permissions.includes('PRODUCT_PRICE_UPDATE'))
 
   function canWrite(action) {
     return Boolean(permissionByAction[action] && result?.allowedActions?.includes(permissionByAction[action]))
@@ -122,7 +126,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   function change(field, value) { setValues(previous => ({ ...previous, [field]: value })) }
 
   async function open(action, id) {
-    if (action !== 'detail' && action !== 'create' && !canWrite(action)) return
+    if (action === 'create' ? !canPreviewCreate : action !== 'detail' && !canWrite(action)) return
     detail.current?.abort()
     setFields({}); setFailure(null); setNotice(''); setValues(blank)
     if (action === 'create') { setModal({ action }); return }
@@ -181,25 +185,15 @@ export function ProductPage({ client = productClient, categories = categoryClien
 
   return <div className="product-page">
     <PageHeader title="Quản lý sản phẩm" description="Tra cứu SKU, danh mục, giá bán và trạng thái kinh doanh."
-      actions={<Button id="product-create" variant="secondary" onClick={() => open('create')}>Xem biểu mẫu tạo</Button>} />
+      actions={canPreviewCreate && <Button id="product-create" variant="secondary" onClick={() => open('create')}>Xem biểu mẫu tạo</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách sản phẩm">
-      <form className="product-filters" aria-label="Tìm kiếm sản phẩm" onSubmit={event => { event.preventDefault(); apply(search) }}>
-        <TextInput label="Tìm SKU, tên, hãng hoặc model" name="product-search" value={search} maxLength={200}
-          onChange={event => changeSearch(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); apply(event.currentTarget.value) }
-          }} />
-        <div className="csm-field"><label htmlFor="product-active">Trạng thái</label>
-          <select id="product-active" value={query.active} onChange={event => apply(search, event.target.value)}>
-            <option value="">Tất cả</option><option value="true">Đang kinh doanh</option><option value="false">Ngừng kinh doanh</option>
-          </select>
-        </div>
-        <Button variant="secondary" disabled={!search && !query.active} onClick={() => { setSearch(''); apply('', '') }}>Đặt lại</Button>
-      </form>
-      {!settled ? <LoadingState label="Đang tải sản phẩm…" /> : error ? <div role="alert">
-        <p>{errorMessage(error)}</p><Button variant="secondary" onClick={() => refreshList(value => value + 1)}>Thử lại</Button>
-      </div> : result.items.length === 0 ? <EmptyState title="Không có sản phẩm" description="Chưa có kết quả phù hợp." /> : <>
+      <RecordFilters label="Tìm kiếm sản phẩm" statusId="product-active" searchLabel="Tìm SKU, tên, hãng hoặc model"
+        searchName="product-search" maxLength={200} search={search} active={query.active}
+        activeLabel="Đang kinh doanh" inactiveLabel="Ngừng kinh doanh" changed={Boolean(search || query.q || query.active)}
+        onSearch={changeSearch} onApply={apply} onReset={() => { setSearch(''); apply('', '') }} />
+      {!settled ? <LoadingState label="Đang tải sản phẩm…" /> : error ? <ListError status={error.status} message={errorMessage(error)}
+        onRetry={() => refreshList(value => value + 1)} /> : result.items.length === 0 ? <EmptyState title="Không có sản phẩm" description="Chưa có kết quả phù hợp." /> : <>
         <div className="product-table-scroll" role="region" aria-label="Bảng sản phẩm có thể cuộn ngang" tabIndex={0}>
           <table className="product-table">
             <caption className="product-sr-only">Sản phẩm</caption>
@@ -212,24 +206,18 @@ export function ProductPage({ client = productClient, categories = categoryClien
               <td><time dateTime={record.updatedAt}>{formatVietnameseDate(record.updatedAt, { withTime: true })}</time></td>
               <td><div className="product-actions">
                 <Button variant="secondary" aria-label={`Xem sản phẩm ${record.sku}`} onClick={() => open('detail', record.id)}>Xem</Button>
-                <Button variant="secondary" disabled={!canWrite('edit')} aria-label={`Sửa sản phẩm ${record.sku}`} onClick={() => open('edit', record.id)}>Sửa</Button>
-                <Button variant="secondary" disabled={!canWrite('price')} aria-label={`Đổi giá bán ${record.sku}`} onClick={() => open('price', record.id)}>Đổi giá</Button>
-                {record.active && <Button variant="secondary" className="product-danger" disabled={!canWrite('deactivate')}
+                {canWrite('edit') && <Button variant="secondary" aria-label={`Sửa sản phẩm ${record.sku}`} onClick={() => open('edit', record.id)}>Sửa</Button>}
+                {canWrite('price') && <Button variant="secondary" aria-label={`Đổi giá bán ${record.sku}`} onClick={() => open('price', record.id)}>Đổi giá</Button>}
+                {record.active && canWrite('deactivate') && <Button variant="secondary" className="product-danger"
                   aria-label={`Ngừng kinh doanh ${record.sku}`} onClick={() => open('deactivate', record.id)}>Ngừng kinh doanh</Button>}
               </div></td>
             </tr>)}</tbody>
           </table>
         </div>
-        <nav className="product-pagination" aria-label="Phân trang sản phẩm">
-          <p role="status">{result.totalElements} sản phẩm · Trang {result.page + 1}/{result.totalPages}</p>
-          <div className="product-actions">
-            <Button variant="secondary" disabled={result.page === 0} onClick={() => setQuery({ ...query, page: result.page - 1 })}>Trang trước</Button>
-            <Button variant="secondary" disabled={result.page + 1 >= result.totalPages} onClick={() => setQuery({ ...query, page: result.page + 1 })}>Trang sau</Button>
-          </div>
-        </nav>
+        <RecordPagination result={result} noun="sản phẩm" onPage={page => setQuery(previous => ({ ...previous, page }))} />
       </>}
     </Card>
-    {modal && <CategoryDialog title={titles[action]} titleId="product-dialog-title" fallbackFocusId="product-create"
+    {modal && <CategoryDialog title={titles[action]} titleId="product-dialog-title" fallbackFocusId="page-title"
       busy={saving} ready={!modal.loading} onClose={close}>
       {modal.loading ? <LoadingState label="Đang tải sản phẩm…" /> : <>
         {failure && <p role="alert" className="message message-error">{errorMessage(failure, action)}</p>}

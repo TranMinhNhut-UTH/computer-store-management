@@ -14,8 +14,11 @@ export function CategoryDialog({ title, busy, ready = true, onClose, children,
     return () => {
       dialog.close()
       document.body.style.overflow = priorOverflow
-      if (opener?.isConnected) opener.focus()
-      else document.getElementById(fallbackFocusId)?.focus()
+      if (opener?.isConnected && !opener.disabled) opener.focus()
+      if (document.activeElement !== opener || opener === document.body) {
+        const fallback = document.getElementById(fallbackFocusId) ?? document.getElementById('page-title')
+        fallback?.focus()
+      }
     }
   }, [fallbackFocusId])
   useEffect(() => {

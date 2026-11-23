@@ -116,3 +116,18 @@ test('A later authorization error leaves no list rows or write actions', async (
   assert.equal(button('Thêm nhà cung cấp'), undefined)
   assert.doesNotMatch(container.textContent, /private/)
 })
+
+test('Applying a Supplier filter hides stale rows and write controls while waiting', async () => {
+  let finish
+  const original = client.list
+  client.list = (query, options) => query.active === 'false'
+    ? new Promise(resolve => { finish = resolve })
+    : original(query, options)
+  await render()
+  await change(container.querySelector('#supplier-active'), 'false')
+  assert.equal(container.querySelector('table'), null)
+  assert.equal(button('Thêm nhà cung cấp'), undefined)
+  await act(async () => finish({ ...page, items: [], totalElements: 0, totalPages: 0 }))
+  assert.match(container.textContent, /Không có nhà cung cấp/)
+  assert.equal(container.querySelector('[aria-label="Phân trang nhà cung cấp"]'), null)
+})

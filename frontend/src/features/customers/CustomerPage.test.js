@@ -127,3 +127,21 @@ test('A later authorization error leaves no list rows or write actions', async (
   assert.equal(button('Thêm khách hàng'), undefined)
   assert.doesNotMatch(container.textContent, /private/)
 })
+
+test('Customer validation links messages to fields and focuses the first invalid input', async () => {
+  await render()
+  await click(button('Thêm khách hàng'))
+  const code = container.querySelector('dialog [name=code]')
+  const name = container.querySelector('dialog [name=fullName]')
+  await change(code, 'bad code')
+  await submit()
+  assert.equal(document.activeElement, code)
+  for (const input of [code, name]) {
+    assert.equal(input.getAttribute('aria-invalid'), 'true')
+    const message = document.getElementById(input.getAttribute('aria-describedby'))
+    assert.ok(message?.textContent)
+  }
+  assert.equal(calls.some(([kind]) => kind === 'create'), false)
+  await change(code, 'GOOD')
+  assert.equal(code.hasAttribute('aria-invalid'), false)
+})

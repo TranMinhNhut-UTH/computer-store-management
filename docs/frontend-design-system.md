@@ -172,3 +172,10 @@ contract approval còn pending. Không sửa Backend/DB hoặc tự đánh dấu
   `Asia/Ho_Chi_Minh`. Dùng formatter hiển thị chung `formatVietnameseDate` và
   giữ timestamp gốc trong thuộc tính `dateTime`. Khi hiển thị cùng ô, đặt giờ
   cập nhật ở dòng chính, ngày tạo ở dòng phụ.
+
+## Tích hợp giao diện TV1 V1
+
+- Sidebar desktop và mobile hiển thị các màn hình đã hoạt động theo quyền đọc mà backend trả về. `GET /api/v1/auth/ui-capabilities` trả các mã quyền TV1 cần cho điều hướng, thao tác Category và xem trước biểu mẫu Product. Báo cáo vẫn dùng `GET /api/v1/reports/access`. Backend tiếp tục kiểm tra từng API; role hoặc tên tài khoản không dùng để suy quyền trên frontend. Đường dẫn đã lưu tới module chưa triển khai vẫn hiển thị trạng thái chờ thay vì dẫn sang một luồng nghiệp vụ.
+- Danh mục, Sản phẩm, Nhà cung cấp và Khách hàng dùng cùng bộ lọc và phân trang. Tìm kiếm chờ 350 ms, Enter áp dụng ngay, đổi trạng thái hoặc đặt lại quay về trang đầu. Không hiển thị hàng cũ hoặc nút phân trang khi đang tải kết quả mới. Danh sách rỗng không hiển thị phân trang.
+- Khi đọc được bản ghi, người dùng có thể mở **Xem**. Nút ghi chỉ hiển thị khi có quyền tương ứng. Dialog dùng tiêu đề, focus và xác nhận hiện có; nếu nút mở không còn sau khi tải lại, focus trở về màn hình. Khách hàng chỉ chỉnh mã và họ tên, với lỗi gắn trực tiếp vào trường. Lỗi 401/403 có thông báo và không đưa nút thử lại cho cùng phiên.
+- Tạo Product vẫn bị chặn theo DEP-001. Người có cả quyền tạo và đổi giá có thể xem biểu mẫu, với nút lưu bị chặn. Các luồng Inventory, Purchasing, Sales và liên quan đang chờ TV2. Báo cáo giao dịch chờ DEP-008/P07; báo cáo tồn chờ INV-001/002 và DEP-001.

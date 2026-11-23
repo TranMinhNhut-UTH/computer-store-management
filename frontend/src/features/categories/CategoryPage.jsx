@@ -3,6 +3,9 @@ import { categoryClient } from '../../api/categories.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { ListError } from '../../components/ui/ListError.jsx'
+import { RecordFilters } from '../../components/ui/RecordFilters.jsx'
+import { RecordPagination } from '../../components/ui/RecordPagination.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { TextInput } from '../../components/ui/TextInput.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
@@ -29,8 +32,9 @@ export function categoryError(error, action) {
 }
 const blank = { code: '', name: '', description: '' }
 const searchDelay = 350
+const actionPermissions = { create: 'CATEGORY_CREATE', edit: 'CATEGORY_UPDATE', deactivate: 'CATEGORY_DEACTIVATE' }
 
-export function CategoryPage({ client = categoryClient }) {
+export function CategoryPage({ client = categoryClient, permissions = [] }) {
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [search, setSearch] = useState('')
   const searchTimer = useRef(null)
@@ -85,15 +89,21 @@ export function CategoryPage({ client = categoryClient }) {
     searchTimer.current = setTimeout(() => applyFilters(value), searchDelay)
   }
 
+  function allowed(action) {
+    return action === 'detail' || permissions.includes(actionPermissions[action])
+  }
+
   function close() {
     if (inFlight.current) return
     detailRequest.current?.abort()
     setModal(null); setDetailLoading(false)
   }
   function openCreate() {
+    if (!allowed('create')) return
     setValues(blank); setFields({}); setModalError(null); setNotice(''); setModal({ action: 'create' })
   }
   async function openRecord(record, action) {
+    if (!allowed(action)) return
     const controller = new AbortController()
     detailRequest.current?.abort(); detailRequest.current = controller
     setModal({ action, record }); setValues(blank); setDetailReady(false); setDetailLoading(true); setModalError(null); setFields({}); setNotice('')
@@ -109,7 +119,7 @@ export function CategoryPage({ client = categoryClient }) {
   }
   async function submit(event) {
     event.preventDefault()
-    if (inFlight.current || detailLoading || (modal.action !== 'create' && !detailReady)) return
+    if (!allowed(modal.action) || modal.action === 'detail' || inFlight.current || detailLoading || (modal.action !== 'create' && !detailReady)) return
     const validation = modal.action === 'deactivate' ? {} : validateCategory(values)
     setFields(validation); setModalError(null)
     if (Object.keys(validation).length) {
@@ -122,6 +132,7 @@ export function CategoryPage({ client = categoryClient }) {
       else if (modal.action === 'edit') await client.update(modal.record.id, categoryValues(values))
       else await client.create(categoryValues(values))
       setModal(null)
+      setLoading(true)
       setNotice(modal.action === 'deactivate' ? 'Đã ngừng sử dụng danh mục.' : 'Đã lưu danh mục.')
       setRefresh(value => value + 1)
     } catch (failure) {
@@ -129,34 +140,17 @@ export function CategoryPage({ client = categoryClient }) {
       if (failure.status === 400) setFields(Object.fromEntries((failure.fields ?? []).map(field => [field, 'Giá trị chưa hợp lệ. Vui lòng kiểm tra lại.'])))
     } finally { inFlight.current = false; setBusy(false) }
   }
-  const denied = error?.status === 401 || error?.status === 403
   return <div className="category-page">
     <PageHeader title="Quản lý danh mục" description="Tra cứu và quản lý thông tin danh mục sản phẩm."
-      actions={<Button id="category-create" onClick={openCreate} disabled={(loading && !result) || Boolean(error)}>Tạo danh mục</Button>} />
+      actions={allowed('create') && !error && <Button id="category-create" onClick={openCreate} disabled={(loading && !result) || Boolean(error)}>Tạo danh mục</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách danh mục">
-      <form className="category-filters" aria-label="Tìm kiếm danh mục" onSubmit={event => {
-        event.preventDefault()
-        applyFilters(search)
-      }}>
-        <TextInput label="Tìm theo mã hoặc tên" name="q" value={search} onChange={event => changeSearch(event.target.value)}
-          onKeyDown={event => {
-            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-            event.preventDefault()
-            applyFilters(event.currentTarget.value)
-          }} maxLength={120} />
-        <div className="csm-field"><label htmlFor="category-active">Trạng thái</label><select id="category-active" value={query.active} onChange={event => applyFilters(search, event.target.value)}>
-          <option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option>
-        </select></div>
-        <Button variant="secondary" disabled={!search && !query.q && !query.active} onClick={() => {
-          setSearch('')
-          applyFilters('', '')
-        }}>Đặt lại</Button>
-      </form>
-      {loading ? <LoadingState label="Đang tải danh mục…" /> : error ? <div className="category-error" role="alert">
-        <h2>{denied ? 'Chưa thể truy cập danh mục' : 'Không tải được danh sách'}</h2><p>{categoryError(error)}</p>
-        <Button variant="secondary" onClick={() => setRefresh(value => value + 1)}>Thử lại</Button>
-      </div> : result?.items.length === 0 ? <EmptyState title="Không có danh mục" description="Chưa có dữ liệu phù hợp với điều kiện tìm kiếm." /> : result && <>
+      <RecordFilters label="Tìm kiếm danh mục" statusId="category-active" searchLabel="Tìm theo mã hoặc tên"
+        searchName="q" maxLength={120} search={search} active={query.active}
+        changed={Boolean(search || query.q || query.active)} onSearch={changeSearch} onApply={applyFilters}
+        onReset={() => { setSearch(''); applyFilters('', '') }} />
+      {loading ? <LoadingState label="Đang tải danh mục…" /> : error ? <ListError status={error.status}
+        message={categoryError(error)} onRetry={() => setRefresh(value => value + 1)} /> : result?.items.length === 0 ? <EmptyState title="Không có danh mục" description="Chưa có dữ liệu phù hợp với điều kiện tìm kiếm." /> : result && <>
         <div className="category-table-region" role="region" aria-label="Bảng danh mục, cuộn ngang để xem thêm" tabIndex={0}>
           <table className="category-table"><caption className="category-sr-only">Danh mục sản phẩm</caption><thead><tr>
             <th scope="col">Mã / Tên danh mục</th><th scope="col">Mô tả</th><th scope="col">Trạng thái</th><th scope="col">Cập nhật / Tạo</th><th scope="col">Thao tác</th>
@@ -167,19 +161,27 @@ export function CategoryPage({ client = categoryClient }) {
               <time dateTime={record.updatedAt}>{formatVietnameseDate(record.updatedAt, { withTime: true })}</time>
               <small className="csm-muted">Tạo: <time dateTime={record.createdAt}>{formatVietnameseDate(record.createdAt)}</time></small>
             </td>
-            <td><div className="category-row-actions"><Button variant="secondary" onClick={() => openRecord(record, 'edit')} aria-label={`Sửa danh mục ${record.code}`}>Sửa</Button>
-              {record.active && <Button variant="secondary" className="category-deactivate" onClick={() => openRecord(record, 'deactivate')} aria-label={`Ngừng sử dụng danh mục ${record.code}`}>Ngừng sử dụng</Button>}</div></td>
+            <td><div className="category-row-actions">
+              <Button variant="secondary" onClick={() => openRecord(record, 'detail')} aria-label={`Xem danh mục ${record.code}`}>Xem</Button>
+              {allowed('edit') && <Button variant="secondary" onClick={() => openRecord(record, 'edit')} aria-label={`Sửa danh mục ${record.code}`}>Sửa</Button>}
+              {record.active && allowed('deactivate') && <Button variant="secondary" className="category-deactivate" onClick={() => openRecord(record, 'deactivate')} aria-label={`Ngừng sử dụng danh mục ${record.code}`}>Ngừng sử dụng</Button>}</div></td>
           </tr>)}</tbody></table>
         </div>
       </>}
-      {!loading && !error && result && <nav className="category-pagination" aria-label="Phân trang danh mục">
-        <p role="status">{result.totalElements} danh mục · Trang {result.totalPages ? result.page + 1 : 0}/{result.totalPages}</p>
-        <div className="category-row-actions"><Button variant="secondary" disabled={result.page === 0} onClick={() => setQuery({ ...query, page: query.page - 1 })}>Trang trước</Button>
-          <Button variant="secondary" disabled={result.page + 1 >= result.totalPages} onClick={() => setQuery({ ...query, page: query.page + 1 })}>Trang sau</Button></div>
-      </nav>}
+      {!loading && !error && result && <RecordPagination result={result} noun="danh mục"
+        onPage={page => setQuery(previous => ({ ...previous, page }))} />}
     </Card>
-    {modal && <CategoryDialog title={modal.action === 'create' ? 'Tạo danh mục' : modal.action === 'edit' ? 'Sửa danh mục' : 'Ngừng sử dụng danh mục'} busy={busy} ready={!detailLoading} onClose={close}>
-      {detailLoading ? <LoadingState label="Đang tải thông tin danh mục…" /> : <form ref={form} noValidate onSubmit={submit} aria-busy={busy} aria-describedby={modalError ? 'category-modal-error' : undefined}>
+    {modal && <CategoryDialog title={modal.action === 'create' ? 'Tạo danh mục' : modal.action === 'edit' ? 'Sửa danh mục' : modal.action === 'detail' ? 'Chi tiết danh mục' : 'Ngừng sử dụng danh mục'} busy={busy} fallbackFocusId="page-title" ready={!detailLoading} onClose={close}>
+      {detailLoading ? <LoadingState label="Đang tải thông tin danh mục…" /> : modal.action === 'detail' ? <>
+        {modalError && <p role="alert" className="message message-error">{categoryError(modalError, 'detail')}</p>}
+        {detailReady && <dl>
+          <dt>Mã danh mục</dt><dd>{modal.record.code}</dd>
+          <dt>Tên danh mục</dt><dd>{modal.record.name}</dd>
+          <dt>Mô tả</dt><dd>{modal.record.description || '—'}</dd>
+          <dt>Trạng thái</dt><dd>{modal.record.active ? 'Đang sử dụng' : 'Ngừng sử dụng'}</dd>
+        </dl>}
+        <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
+      </> : <form ref={form} noValidate onSubmit={submit} aria-busy={busy} aria-describedby={modalError ? 'category-modal-error' : undefined}>
         {modalError && <p id="category-modal-error" role="alert" className="message message-error">{categoryError(modalError, modal.action)}</p>}
         {/* Failed detail reads must never submit stale list data. */}
         {(modal.action === 'create' || detailReady) && (modal.action === 'deactivate' ? <p>Ngừng sử dụng <strong>{modal.record.name}</strong> ({modal.record.code})? Danh mục sẽ ngừng sử dụng nhưng không bị xóa khỏi hệ thống. Bạn vẫn có thể xem lại bằng bộ lọc Ngừng sử dụng.</p> : <fieldset disabled={busy}>
@@ -189,7 +191,7 @@ export function CategoryPage({ client = categoryClient }) {
             <p id="category-description-help" className={fields.description ? 'csm-field-error' : 'csm-muted'}>{fields.description || 'Tối đa 500 ký tự. Để trống để xóa mô tả khi cập nhật.'}</p></div>
         </fieldset>)}
         <footer><Button data-initial-focus={modal.action === 'deactivate' ? true : undefined} variant="secondary" disabled={busy} onClick={close}>Hủy</Button>
-          <Button type="submit" loading={busy} disabled={modalError?.status === 401 || modalError?.status === 403 || modalError?.status === 404 || (modal.action !== 'create' && !detailReady)}>{modal.action === 'deactivate' ? 'Xác nhận ngừng sử dụng' : 'Lưu danh mục'}</Button></footer>
+          <Button type="submit" loading={busy} disabled={!allowed(modal.action) || modalError?.status === 401 || modalError?.status === 403 || modalError?.status === 404 || (modal.action !== 'create' && !detailReady)}>{modal.action === 'deactivate' ? 'Xác nhận ngừng sử dụng' : 'Lưu danh mục'}</Button></footer>
       </form>}
     </CategoryDialog>}
   </div>

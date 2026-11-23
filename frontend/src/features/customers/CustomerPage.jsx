@@ -5,6 +5,9 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { ListError } from '../../components/ui/ListError.jsx'
+import { RecordFilters } from '../../components/ui/RecordFilters.jsx'
+import { RecordPagination } from '../../components/ui/RecordPagination.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { TextInput } from '../../components/ui/TextInput.jsx'
 import { formatVietnameseDate } from '../../format/vietnameseDate.js'
@@ -17,7 +20,7 @@ const permissions = { create: 'CUSTOMER_CREATE', edit: 'CUSTOMER_UPDATE' }
 
 function errorText(error) {
   switch (error.status) {
-    case 400: return 'Dữ liệu không hợp lệ. Kiểm tra mã, thông tin liên hệ và độ dài các trường.'
+    case 400: return 'Dữ liệu không hợp lệ. Kiểm tra mã và họ tên khách hàng.'
     case 401: return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
     case 403: return 'Tài khoản hiện không có quyền thực hiện thao tác này.'
     case 404: return 'Không tìm thấy khách hàng.'
@@ -34,6 +37,8 @@ export function CustomerPage({ client = customerClient }) {
   const [list, setList] = useState({ loading: true })
   const [dialog, setDialog] = useState(null)
   const [values, setValues] = useState({})
+  const [validation, setValidation] = useState({})
+  const form = useRef(null)
   const [failure, setFailure] = useState(null)
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
@@ -44,17 +49,23 @@ export function CustomerPage({ client = customerClient }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    setList(previous => ({ result: previous.result, loading: true }))
+    setList({ loading: true })
     client.list(query, { signal: controller.signal }).then(data => {
       if (controller.signal.aborted) return
       if (query.page > 0 && query.page >= data.totalPages) {
-        setQuery({ ...query, page: Math.max(0, data.totalPages - 1) })
+        setQuery(previous => previous === query ? { ...previous, page: Math.max(0, data.totalPages - 1) } : previous)
       } else setList({ result: data })
     }).catch(error => { if (!controller.signal.aborted) setList({ error }) })
     return () => controller.abort()
   }, [client, query, reload])
 
   useEffect(() => () => { clearTimeout(searchTimer.current); detailRequest.current?.abort() }, [])
+
+  function changeSearch(value) {
+    setSearch(value)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => apply(value), 350)
+  }
 
   function apply(value, active) {
     clearTimeout(searchTimer.current)
@@ -71,6 +82,7 @@ export function CustomerPage({ client = customerClient }) {
     if (action !== 'detail' && !allowed(action)) return
     detailRequest.current?.abort()
     setFailure(null)
+    setValidation({})
     setNotice('')
     setValues({})
     if (action === 'create') { setDialog({ action }); return }
@@ -97,8 +109,15 @@ export function CustomerPage({ client = customerClient }) {
     event.preventDefault()
     const { action, record } = dialog
     if (pending.current || !allowed(action) || (action !== 'create' && !record)) return
-    if (!/^[A-Za-z0-9._-]+$/.test(values.code?.trim() ?? '') || !values.fullName?.trim()) {
-      setFailure({ status: 400 })
+    const code = values.code?.trim() ?? ''
+    const name = values.fullName?.trim() ?? ''
+    const errors = {}
+    if (!/^[A-Za-z0-9._-]{1,50}$/.test(code)) errors.code = 'Nhập mã từ 1 đến 50 ký tự hợp lệ.'
+    if (!name || name.length > 150) errors.fullName = 'Nhập họ tên từ 1 đến 150 ký tự.'
+    setValidation(errors)
+    setFailure(null)
+    if (Object.keys(errors).length) {
+      form.current.elements.namedItem(Object.keys(errors)[0])?.focus()
       return
     }
     pending.current = true
@@ -108,6 +127,7 @@ export function CustomerPage({ client = customerClient }) {
       if (action === 'create') await client.create(values)
       else await client.update(record.id, values)
       setDialog(null)
+      setList({ loading: true })
       setNotice('Đã lưu hồ sơ khách hàng.')
       setReload(count => count + 1)
     } catch (error) { setFailure(error) }
@@ -123,23 +143,12 @@ export function CustomerPage({ client = customerClient }) {
       actions={allowed('create') && <Button onClick={() => open('create')}>Thêm khách hàng</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách khách hàng">
-      <form className="category-filters" onSubmit={event => { event.preventDefault(); apply(search) }}>
-        <TextInput label="Tìm mã hoặc tên" value={search} maxLength={200} onChange={event => {
-          const value = event.target.value
-          setSearch(value)
-          clearTimeout(searchTimer.current)
-          searchTimer.current = setTimeout(() => apply(value), 350)
-        }} />
-        <div className="csm-field"><label htmlFor="customer-active">Trạng thái</label>
-          <select id="customer-active" value={query.active} onChange={event => apply(search, event.target.value)}>
-            <option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option>
-          </select>
-        </div>
-        <Button variant="secondary" onClick={() => { setSearch(''); apply('', '') }}>Đặt lại</Button>
-      </form>
+      <RecordFilters label="Tìm kiếm khách hàng" statusId="customer-active" searchLabel="Tìm theo mã hoặc tên"
+        maxLength={200} search={search} active={query.active} changed={Boolean(search || query.q || query.active)}
+        onSearch={changeSearch} onApply={apply} onReset={() => { setSearch(''); apply('', '') }} />
       {list.loading && <LoadingState label="Đang tải khách hàng…" />}
-      {list.error && <div role="alert" className="category-error"><p>{errorText(list.error)}</p>
-        <Button variant="secondary" onClick={() => setReload(count => count + 1)}>Thử lại</Button></div>}
+      {list.error && <ListError status={list.error.status} message={errorText(list.error)}
+        onRetry={() => setReload(count => count + 1)} />}
       {!list.loading && result?.items.length === 0 && <EmptyState title="Không có khách hàng" description="Thử đổi từ khóa hoặc trạng thái." />}
       {result?.items.length > 0 && <>
         <div className="category-table-region" role="region" aria-label="Bảng khách hàng" tabIndex={0} aria-busy={list.loading}>
@@ -157,15 +166,7 @@ export function CustomerPage({ client = customerClient }) {
             </tr>)}</tbody>
           </table>
         </div>
-        <nav className="category-pagination" aria-label="Phân trang khách hàng">
-          <p>Trang {result.page + 1}/{result.totalPages} · {result.totalElements} khách hàng</p>
-          <div className="category-row-actions">
-            <Button variant="secondary" disabled={list.loading || result.page === 0}
-              onClick={() => setQuery({ ...query, page: result.page - 1 })}>Trang trước</Button>
-            <Button variant="secondary" disabled={list.loading || result.page + 1 >= result.totalPages}
-              onClick={() => setQuery({ ...query, page: result.page + 1 })}>Trang sau</Button>
-          </div>
-        </nav>
+        <RecordPagination result={result} noun="khách hàng" onPage={page => setQuery(previous => ({ ...previous, page }))} />
       </>}
     </Card>
     {dialog && <CategoryDialog title={titles[action]} titleId="customer-dialog-title" fallbackFocusId="customer-page"
@@ -178,13 +179,16 @@ export function CustomerPage({ client = customerClient }) {
         </dl>
         <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
       </>}
-      {(action === 'create' || (action === 'edit' && record)) && <form onSubmit={submit} aria-busy={saving}>
+      {(action === 'create' || (action === 'edit' && record)) && <form ref={form} onSubmit={submit} noValidate aria-busy={saving}>
         <fieldset disabled={saving}>{fields.map(([key, label, maxLength]) =>
               <TextInput key={key} label={label} name={key} maxLength={maxLength}
                 required={key === 'code' || key === 'fullName'} value={values[key] ?? ''}
-                error={failure?.fields?.includes(key) ? 'Giá trị chưa hợp lệ.' : undefined}
+                error={validation[key] || (failure?.fields?.includes(key) ? 'Giá trị chưa hợp lệ.' : undefined)}
                 data-initial-focus={key === 'code' || undefined}
-                onChange={event => setValues({ ...values, [key]: event.target.value })} />
+                onChange={event => {
+                  setValues({ ...values, [key]: event.target.value })
+                  setValidation(previous => ({ ...previous, [key]: undefined }))
+                }} />
           )}</fieldset>
         <footer>
           <Button variant="secondary" disabled={saving} onClick={close}>Hủy</Button>

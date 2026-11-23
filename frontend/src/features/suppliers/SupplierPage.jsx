@@ -5,6 +5,9 @@ import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
+import { ListError } from '../../components/ui/ListError.jsx'
+import { RecordFilters } from '../../components/ui/RecordFilters.jsx'
+import { RecordPagination } from '../../components/ui/RecordPagination.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
 import { TextInput } from '../../components/ui/TextInput.jsx'
 import { formatVietnameseDate } from '../../format/vietnameseDate.js'
@@ -50,17 +53,23 @@ export function SupplierPage({ client = supplierClient }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    setList(previous => ({ result: previous.result, loading: true }))
+    setList({ loading: true })
     client.list(query, { signal: controller.signal }).then(data => {
       if (controller.signal.aborted) return
       if (query.page > 0 && query.page >= data.totalPages) {
-        setQuery({ ...query, page: Math.max(0, data.totalPages - 1) })
+        setQuery(previous => previous === query ? { ...previous, page: Math.max(0, data.totalPages - 1) } : previous)
       } else setList({ result: data })
     }).catch(error => { if (!controller.signal.aborted) setList({ error }) })
     return () => controller.abort()
   }, [client, query, reload])
 
   useEffect(() => () => { clearTimeout(searchTimer.current); detailRequest.current?.abort() }, [])
+
+  function changeSearch(value) {
+    setSearch(value)
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => apply(value), 350)
+  }
 
   function apply(value, active) {
     clearTimeout(searchTimer.current)
@@ -111,6 +120,7 @@ export function SupplierPage({ client = supplierClient }) {
       else if (action === 'edit') await client.update(record.id, values)
       else await client.deactivate(record.id)
       setDialog(null)
+      setList({ loading: true })
       setNotice(action === 'deactivate' ? 'Đã ngừng sử dụng nhà cung cấp.' : 'Đã lưu nhà cung cấp.')
       setReload(count => count + 1)
     } catch (error) { setFailure(error) }
@@ -126,23 +136,12 @@ export function SupplierPage({ client = supplierClient }) {
       actions={allowed('create') && <Button onClick={() => open('create')}>Thêm nhà cung cấp</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách nhà cung cấp">
-      <form className="category-filters" onSubmit={event => { event.preventDefault(); apply(search) }}>
-        <TextInput label="Tìm mã hoặc tên" value={search} maxLength={200} onChange={event => {
-          const value = event.target.value
-          setSearch(value)
-          clearTimeout(searchTimer.current)
-          searchTimer.current = setTimeout(() => apply(value), 350)
-        }} />
-        <div className="csm-field"><label htmlFor="supplier-active">Trạng thái</label>
-          <select id="supplier-active" value={query.active} onChange={event => apply(search, event.target.value)}>
-            <option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option>
-          </select>
-        </div>
-        <Button variant="secondary" onClick={() => { setSearch(''); apply('', '') }}>Đặt lại</Button>
-      </form>
+      <RecordFilters label="Tìm kiếm nhà cung cấp" statusId="supplier-active" searchLabel="Tìm theo mã hoặc tên"
+        maxLength={200} search={search} active={query.active} changed={Boolean(search || query.q || query.active)}
+        onSearch={changeSearch} onApply={apply} onReset={() => { setSearch(''); apply('', '') }} />
       {list.loading && <LoadingState label="Đang tải nhà cung cấp…" />}
-      {list.error && <div role="alert" className="category-error"><p>{errorText(list.error)}</p>
-        <Button variant="secondary" onClick={() => setReload(count => count + 1)}>Thử lại</Button></div>}
+      {list.error && <ListError status={list.error.status} message={errorText(list.error)}
+        onRetry={() => setReload(count => count + 1)} />}
       {!list.loading && result?.items.length === 0 && <EmptyState title="Không có nhà cung cấp" description="Thử đổi từ khóa hoặc trạng thái." />}
       {result?.items.length > 0 && <>
         <div className="category-table-region" role="region" aria-label="Bảng nhà cung cấp" tabIndex={0} aria-busy={list.loading}>
@@ -163,15 +162,7 @@ export function SupplierPage({ client = supplierClient }) {
             </tr>)}</tbody>
           </table>
         </div>
-        <nav className="category-pagination" aria-label="Phân trang nhà cung cấp">
-          <p>Trang {result.page + 1}/{result.totalPages} · {result.totalElements} nhà cung cấp</p>
-          <div className="category-row-actions">
-            <Button variant="secondary" disabled={list.loading || result.page === 0}
-              onClick={() => setQuery({ ...query, page: result.page - 1 })}>Trang trước</Button>
-            <Button variant="secondary" disabled={list.loading || result.page + 1 >= result.totalPages}
-              onClick={() => setQuery({ ...query, page: result.page + 1 })}>Trang sau</Button>
-          </div>
-        </nav>
+        <RecordPagination result={result} noun="nhà cung cấp" onPage={page => setQuery(previous => ({ ...previous, page }))} />
       </>}
     </Card>
     {dialog && <CategoryDialog title={titles[action]} titleId="supplier-dialog-title" fallbackFocusId="supplier-page"

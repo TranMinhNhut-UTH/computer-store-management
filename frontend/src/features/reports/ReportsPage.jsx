@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { overviewKeys, reportsClient } from '../../api/reports.js'
-import { Button } from '../../components/ui/Button.jsx'
+import { ListError } from '../../components/ui/ListError.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { LoadingState } from '../../components/ui/LoadingState.jsx'
@@ -33,14 +33,10 @@ export function ReportsPage() {
   return <section className="reports-page">
     <PageHeader title="Báo cáo" description="Tổng hợp danh mục, sản phẩm và đối tác." />
     {phase === 'loading' && <Card><LoadingState label="Đang tải báo cáo…" /></Card>}
-    {phase === 'error' && <Card>
-      <p className="message message-error" role="alert">
-        {status === 403 ? 'Tài khoản hiện không có quyền xem báo cáo.'
-          : status === 401 ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
-          : 'Không thể tải báo cáo.'}
-      </p>
-      {status !== 401 && status !== 403 && <Button variant="secondary" onClick={retry}>Thử lại</Button>}
-    </Card>}
+    {phase === 'error' && <Card><ListError status={status} onRetry={retry}
+      message={status === 403 ? 'Tài khoản hiện không có quyền xem báo cáo.'
+        : status === 401 ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+        : 'Không thể tải báo cáo.'} /></Card>}
     {phase === 'ready' && <>
       <div className="reports-kpis" aria-label="Tổng số theo nhóm">
         {overviewKeys.map(key => <Card className="reports-kpi" key={key}>
@@ -64,7 +60,7 @@ export function ReportsPage() {
         </div>}
       </Card>
       <Card className="reports-breakdown">
-        <h2>Chưa có số liệu</h2>
+        <h2>Số liệu chưa khả dụng</h2>
         <p className="csm-muted">Doanh thu, số bán và trả hàng, tồn kho và tồn thấp đang chờ tích hợp dữ liệu giao dịch.</p>
       </Card>
     </>}
