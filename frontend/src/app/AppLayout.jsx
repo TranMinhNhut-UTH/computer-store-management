@@ -11,6 +11,7 @@ import { CategoryPage } from '../features/categories/CategoryPage.jsx'
 import { ProductPage } from '../features/products/ProductPage.jsx'
 import { SupplierPage } from '../features/suppliers/SupplierPage.jsx'
 import { CustomerPage } from '../features/customers/CustomerPage.jsx'
+import { StaffPage } from '../features/employees/StaffPage.jsx'
 import { ReportsPage } from '../features/reports/ReportsPage.jsx'
 import { getUiCapabilities } from '../api/uiCapabilities.js'
 import { LoadingState } from '../components/ui/LoadingState.jsx'
@@ -18,7 +19,7 @@ import { reportsClient } from '../api/reports.js'
 import './shell.css'
 import '../components/ui/ui.css'
 
-const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage, reports: ReportsPage }
+const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage, reports: ReportsPage, employees: StaffPage }
 
 const tabletQuery = '(min-width: 768px)'
 const desktopQuery = '(min-width: 1024px)'
@@ -119,7 +120,7 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
     <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} />
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">
         {error && <div className="message message-error" role="alert">{error}</div>}{notice && <p className="message message-success" role="status">{notice}</p>}
-        {BusinessPage ? <BusinessPage permissions={permissions} /> : selectedId === 'overview' ? <>
+        {BusinessPage ? <BusinessPage permissions={permissions} currentUserId={user.userId} /> : selectedId === 'overview' ? <>
           <PageHeader title={current.label} />
           <Card aria-label={current.label}>
             {capabilities.loading ? <LoadingState label="Đang tải quyền truy cập…" />
