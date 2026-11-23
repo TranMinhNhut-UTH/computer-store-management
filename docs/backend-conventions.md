@@ -70,6 +70,8 @@ Dùng ProblemDetail (application/problem+json) với type/title/status/detail/in
 
 **PROPOSED — pagination:** page bắt đầu 0; size mặc định 20, tối đa 100; tham số sai trả 400. Response riêng gồm items/page/size/totalElements/totalPages; không để PageImpl trở thành contract công khai. Allowlist sort fields; thêm id làm tie-breaker. Filter/sort mặc định theo use case. Không lấy List không giới hạn để phục vụ API danh sách lớn.
 
+**Đã triển khai trong FND-007:** các API danh sách Category, Product, Supplier, Customer và Staff dùng chung kiểm tra `page >= 0`, `1 <= size <= 100` và offset trong miền `int` mà JPA hỗ trợ. Mỗi API giữ DTO, quyền đọc, sort chính và mã lỗi hiện có. Client kiểm tra `page` và `size` khớp request trước khi hiển thị. Response rỗng cho trang vượt trang cuối vẫn hợp lệ để UI có thể quay lại trang còn dữ liệu. Áp dụng cho năm API đang phát hành. P05/P10/P11 vẫn chờ chốt phạm vi chung.
+
 **Lý do:** tránh mất chính xác số trong JS/JSX, giữ API độc lập persistence và giảm tích hợp lỗi giữa module. **Phạm vi:** mọi REST API và frontend.
 
 **PENDING:** phê duyệt decimal-string contract, error schema/catalog và pagination limits; route/versioning, quy tắc PATCH phân biệt omitted/null, field DTO từng use case. Các mã lỗi trên chưa là catalog chính thức.

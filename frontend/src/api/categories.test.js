@@ -10,7 +10,10 @@ const csrf = { headerName: 'X-SERVER-CSRF', token: 'test-only-token' }
 
 test('list uses exact page contract, string IDs, encoded search and optional active filter', async () => {
   const calls = []
-  const client = createCategoryClient(async (url, options) => { calls.push({ url, options }); return Response.json(page) })
+  const client = createCategoryClient(async (url, options) => {
+    calls.push({ url, options })
+    return Response.json(calls.length === 1 ? page : { ...page, items: [], page: 2, size: 10 })
+  })
   assert.deepEqual(await client.list(), page)
   await client.list({ q: 'CPU% &', active: false, page: 2, size: 10 })
   const params = new URL(calls[1].url, 'http://local').searchParams

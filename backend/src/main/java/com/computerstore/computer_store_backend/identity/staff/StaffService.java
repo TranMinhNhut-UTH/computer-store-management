@@ -12,6 +12,7 @@ import com.computerstore.computer_store_backend.identity.repository.AppUserRepos
 import com.computerstore.computer_store_backend.identity.repository.UserRoleRepository;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.nio.CharBuffer;
@@ -26,8 +27,6 @@ import java.util.stream.Collectors;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -59,11 +58,11 @@ public class StaffService {
 
     public StaffResponse.Page list(String q, Boolean active, int page, int size) {
         var access = require(EMPLOYEE_READ);
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) throw invalid();
+        var pagination = ListPagination.request(page, size, "fullName", StaffService::invalid);
         var search = text(q, 150, false);
         var pattern = search == null ? null
                 : "%" + search.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        var result = users.searchStaff(pattern, active, PageRequest.of(page, size, Sort.by("fullName", "id")));
+        var result = users.searchStaff(pattern, active, pagination);
         var ids = result.getContent().stream().map(AppUser::getId).toList();
         var linked = links(ids).stream().collect(Collectors.groupingBy(link -> link.getUser().getId()));
         var items = result.getContent().stream().map(user -> response(user, linked.getOrDefault(user.getId(), List.of()))).toList();
