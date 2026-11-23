@@ -35,6 +35,22 @@ Invalid input returns `400`. Missing or inactive identity returns `401`. Missing
 - Each guarded business request reloads current roles and effective grants. Removing the last role that grants a permission takes effect on the next guarded request, typically `403` for an otherwise active account. If another assigned role still grants it, access remains. Grants restored by role assignment can take effect on the same session.
 - Unlocking can restore guarded access on an unexpired pre-lock session. Requests already past authorization are not canceled. Immediate session revocation and invalidation across nodes remain open under P01. For suspected compromise, keep the account locked until existing sessions have expired or an approved procedure has invalidated them. Do not use unlock as a session reset.
 
-`StaffManagementIT` covers the isolated MySQL migration stages and real HTTP sessions, including the four roles, CSRF, create and assignment rollback, lock and unlock, and competing administrators. The isolated fixture's predecessor history is compared against the original migration artifacts. Production activation still requires approval of the candidate assignments and live V10/V11 read-back.
+`StaffManagementIT` covers the isolated MySQL migration stages and real HTTP sessions, including the four roles, CSRF, create and assignment rollback, lock and unlock, and competing administrators. The isolated fixture's predecessor history is compared against the original migration artifacts. Other deployments still require their own approved rollout and V10/V11 read-back.
 
 Browser smoke on Spring Boot, Vite and disposable MySQL verified create, detail and edit at 1440px in light mode. At 375px in dark mode it verified navigation, role assignment, lock and unlock, and sign-in as the newly created account. Anonymous list returned HTTP 401. The non-Admin account received HTTP 403 and had no Staff navigation entry.
+
+## Local rollout and smoke evidence
+
+The operator confirmed the following on `computer_store_dev`. The disposable MySQL and browser results above remain separate evidence.
+
+| Check | Local result |
+|---|---|
+| Flyway V10 read-back | PASS. Six `EMPLOYEE_*` permissions. |
+| Flyway V11 read-back | PASS. Six explicit `ADMIN` grants. |
+| Backend health | PASS. |
+| Anonymous Staff API | PASS. HTTP `401`. |
+| ADMIN | PASS. Opened `/employees` and saw management actions. |
+| MANAGER | PASS. Staff Management access was denied. |
+| Staff create, edit, role assignment, lock and unlock | PENDING. No live mutation smoke was recorded on `computer_store_dev`. |
+
+The local launch uses the ignored `backend/config/staff-local.properties` activation file. It is excluded from Git, and the default application configuration keeps Staff disabled. Immediate session revocation remains open under P01.
