@@ -30,6 +30,7 @@ class CurrentActorServiceTest {
         when(principal.getUserId()).thenReturn(42L);
         when(principal.getUsername()).thenReturn("employee");
         when(principal.isEnabled()).thenReturn(true);
+        when(principal.getSessionVersion()).thenReturn(0L);
         when(user.getUsername()).thenReturn("employee");
         when(user.getActive()).thenReturn(true);
         when(users.findById(42L)).thenReturn(Optional.of(user));

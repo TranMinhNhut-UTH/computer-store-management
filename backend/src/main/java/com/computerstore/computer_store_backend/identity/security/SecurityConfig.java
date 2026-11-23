@@ -1,5 +1,6 @@
 package com.computerstore.computer_store_backend.identity.security;
 
+import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -16,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
@@ -31,17 +33,20 @@ public class SecurityConfig {
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler,
+            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users,
             @Value("${csm.staff-management.enabled:false}") boolean staffManagement) throws Exception {
         // Verify the Customer V9 grants before deploying this release.
-        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true, staffManagement);
+        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler,
+                users, true, staffManagement);
     }
 
     SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler, boolean customerReleased, boolean staffManagement) throws Exception {
+            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users, boolean customerReleased,
+            boolean staffManagement) throws Exception {
         return http
+                .addFilterBefore(new SessionVersionFilter(users, entryPoint), CsrfFilter.class)
                 .authorizeHttpRequests(authorize -> {
                     authorize
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()

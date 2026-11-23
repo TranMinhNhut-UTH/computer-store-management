@@ -247,6 +247,8 @@ class CategoryProductReferenceIT {
                 assertTrue(ddl.find(), "Missing V1 definition for " + table);
                 jdbc.execute(ddl.group());
             }
+            jdbc.execute(new ClassPathResource("operations/session/v1/V12__add_employee_session_version.sql")
+                    .getContentAsString(StandardCharsets.UTF_8));
             return datasource;
         }
 

@@ -27,7 +27,7 @@ public class EmployeeUserDetailsService implements UserDetailsService {
         // Disabled users remain distinguishable internally through DaoAuthenticationProvider's check.
         // Null active (invalid database state) also fails closed.
         return new EmployeePrincipal(user.getId(), user.getUsername(), user.getPasswordHash(),
-                Boolean.TRUE.equals(user.getActive()));
+                Boolean.TRUE.equals(user.getActive()), user.getSessionVersion());
     }
 
     private static UsernameNotFoundException unavailable() {

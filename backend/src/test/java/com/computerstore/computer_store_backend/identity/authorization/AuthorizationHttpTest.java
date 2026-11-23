@@ -34,11 +34,13 @@ class AuthorizationHttpTest {
     @BeforeEach void setup() {
         SecurityContextHolder.clearContext();
         when(principal.getUserId()).thenReturn(42L); when(principal.getUsername()).thenReturn("employee");
-        when(principal.isEnabled()).thenReturn(true); when(user.getActive()).thenReturn(true);
+        when(principal.isEnabled()).thenReturn(true);
+        when(principal.getSessionVersion()).thenReturn(0L); when(user.getActive()).thenReturn(true);
         when(user.getUsername()).thenReturn("employee"); when(users.findById(42L)).thenReturn(Optional.of(user));
         var entities = mock(EntityManager.class);
         @SuppressWarnings("unchecked") TypedQuery<String> roles = mock(TypedQuery.class);
         when(entities.createQuery(RoleResolutionService.ROLES_QUERY, String.class)).thenReturn(roles);
+        when(roles.setParameter("sessionVersion", 0L)).thenReturn(roles);
         when(roles.setParameter("userId", 42L)).thenReturn(roles); when(roles.getResultList()).thenReturn(List.of());
         var actors = new CurrentActorService(users);
         var guard = new AuthorizationService(new RoleResolutionService(actors, entities));

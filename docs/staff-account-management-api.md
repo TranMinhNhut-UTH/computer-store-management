@@ -31,9 +31,9 @@ Invalid input returns `400`. Missing or inactive identity returns `401`. Missing
 
 ### P01 session and role changes
 
-- Locking retains existing HTTP sessions. While the account is inactive, `GET /api/v1/auth/me` and business requests that resolve the current actor return `401`. The SPA clears the workspace when its current protected request returns `401`. Session-only endpoints such as logout follow their existing rules.
-- Each guarded business request reloads current roles and effective grants. Removing the last role that grants a permission takes effect on the next guarded request, typically `403` for an otherwise active account. If another assigned role still grants it, access remains. Grants restored by role assignment can take effect on the same session.
-- Unlocking can restore guarded access on an unexpired pre-lock session. Requests already past authorization are not canceled. Immediate session revocation and invalidation across nodes remain open under P01. For suspected compromise, keep the account locked until existing sessions have expired or an approved procedure has invalidated them. Do not use unlock as a session reset.
+- A successful lock revokes every prior session when the transaction commits. Protected requests return `401 UNAUTHENTICATED`. Unlock leaves those sessions revoked and requires fresh sign-in.
+- An actual role-set change revokes all prior sessions the same way. Identical role assignments, ordinary account edits and failed Staff writes leave current sessions usable. New sessions use current server grants and still return `403` when a permission is missing.
+- The SPA keeps the current route and prompts for sign-in without replaying rejected writes. Existing logout and CSRF protections remain. Requests already past authorization can finish. The V12 prerequisite and timeout limits are described in the [P01 rollout runbook](session-revocation-rollout.md).
 
 `StaffManagementIT` covers the isolated MySQL migration stages and real HTTP sessions, including the four roles, CSRF, create and assignment rollback, lock and unlock, and competing administrators. The isolated fixture's predecessor history is compared against the original migration artifacts. Other deployments still require their own approved rollout and V10/V11 read-back.
 
@@ -53,4 +53,4 @@ The operator confirmed the following on `computer_store_dev`. The disposable MyS
 | MANAGER | PASS. Staff Management access was denied. |
 | Staff create, edit, role assignment, lock and unlock | PENDING. No live mutation smoke was recorded on `computer_store_dev`. |
 
-The local launch uses the ignored `backend/config/staff-local.properties` activation file. It is excluded from Git, and the default application configuration keeps Staff disabled. Immediate session revocation remains open under P01.
+The local launch uses the ignored `backend/config/staff-local.properties` activation file. It is excluded from Git, and the default application configuration keeps Staff disabled. The P01 release requires verified V12 before starting this backend.

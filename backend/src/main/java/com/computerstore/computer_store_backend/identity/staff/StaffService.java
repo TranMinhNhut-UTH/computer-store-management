@@ -121,6 +121,7 @@ public class StaffService {
             assignments.deleteAll(removed);
             assignments.saveAllAndFlush(added);
             user.setUpdatedAt(time.now());
+            user.revokeSessions();
         }
         var kept = new java.util.ArrayList<>(existing);
         kept.removeAll(removed);
@@ -137,6 +138,7 @@ public class StaffService {
         if (user.getActive() != active) {
             user.setActive(active);
             user.setUpdatedAt(time.now());
+            if (!active) user.revokeSessions();
             save(user);
         }
         return response(user, links);

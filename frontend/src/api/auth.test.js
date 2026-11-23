@@ -2,10 +2,29 @@ import { createApiTransport, observeSessionRejection } from './client.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ApiError, createAuthClient } from './auth.js'
+import { createStaffClient } from './staff.js'
 
 // These tests never contact a server: every fetch is an in-memory stub.
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status })
 const csrf = { headerName: 'X-CSRF-TOKEN', token: 'test-masked-token' }
+
+test('a rejected Staff mutation signals sign-in but sends the write only once', async () => {
+  const writes = []
+  const staff = createStaffClient(async (url, options) => {
+    if (url.endsWith('/csrf')) return json(csrf)
+    writes.push({ url, method: options.method })
+    return json({ code: 'UNAUTHENTICATED' }, 401)
+  })
+  let rejected = 0
+  const stop = observeSessionRejection(() => { rejected++ })
+  try {
+    await assert.rejects(staff.setActive('42', false), { status: 401 })
+    assert.equal(rejected, 1)
+    assert.deepEqual(writes, [{ url: '/api/v1/employees/42/lock', method: 'POST' }])
+  } finally {
+    stop()
+  }
+})
 
 test('login sends exact password and server-named CSRF header with same-origin cookies', async () => {
   const requests = []

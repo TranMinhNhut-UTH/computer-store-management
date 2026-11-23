@@ -50,13 +50,16 @@ class PermissionPolicyMappingTest {
         when(principal.getUserId()).thenReturn(42L);
         when(principal.getUsername()).thenReturn("employee");
         when(principal.isEnabled()).thenReturn(true);
+        when(principal.getSessionVersion()).thenReturn(0L);
         when(user.getUsername()).thenReturn("employee");
         when(user.getActive()).thenReturn(true);
         when(users.findById(42L)).thenReturn(Optional.of(user));
         when(entities.createQuery(RoleResolutionService.ROLES_QUERY, String.class)).thenReturn(roles);
         when(entities.createQuery(RoleResolutionService.PERMISSIONS_QUERY, String.class)).thenReturn(permissions);
+        when(roles.setParameter("sessionVersion", 0L)).thenReturn(roles);
         when(roles.setParameter("userId", 42L)).thenReturn(roles);
         when(roles.getResultList()).thenReturn(List.of("MANAGER"));
+        when(permissions.setParameter("sessionVersion", 0L)).thenReturn(permissions);
         when(permissions.setParameter("userId", 42L)).thenReturn(permissions);
         when(permissions.setParameter(eq("roleCodes"), any())).thenReturn(permissions);
         when(permissions.getResultList()).thenReturn(List.of("PRODUCT_READ"));
