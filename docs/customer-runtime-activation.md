@@ -1,6 +1,6 @@
 # Customer V8/V9 local rollout on Windows
 
-Use this guide for the separately authorized rollout on MySQL 8.0 at `127.0.0.1:3306/computer_store_dev`. The approved Customer grants are Manager read and Sales Staff read, create and update. Set aside a maintenance window and make sure you can stop every process or person writing to this schema before the backup.
+Keep the Customer application stopped until Step 10, including when the checkout already contains the release patch. Use this guide for the separately authorized rollout on MySQL 8.0 at `127.0.0.1:3306/computer_store_dev`. The approved Customer grants are Manager read and Sales Staff read, create and update. Set aside a maintenance window and make sure you can stop every process or person writing to this schema before the backup.
 
 Open a dedicated PowerShell terminal. Paste **one numbered block at a time** and wait for its success message. The blocks share variables and functions. `cls` only clears the screen. Closing the terminal or opening a new one loses the variables and functions. Steps 1–10 use the same rollout terminal. Step 10 uses two additional terminals only for app startup. If the rollout terminal closes after a migration was attempted, stop, preserve the backup and inspect live history before deciding how to resume. Keep the write freeze in place.
 
@@ -24,13 +24,18 @@ Open a dedicated PowerShell terminal. Paste **one numbered block at a time** and
     }
     git status --short --branch
     if ($LASTEXITCODE -ne 0) { throw 'Git status failed.' }
-    git apply --check docs/customer-http-release.patch
-    if ($LASTEXITCODE -ne 0) { throw 'The Customer release patch does not apply to this checkout.' }
-    Write-Host "PASS: $branch. Tracked files are clean and the release patch applies."
+    git apply --reverse --check docs/customer-http-release.patch 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "PASS: $branch. Tracked files are clean and the release patch is already in source."
+    } else {
+        git apply --check docs/customer-http-release.patch
+        if ($LASTEXITCODE -ne 0) { throw 'The Customer release patch does not match this checkout.' }
+        Write-Host "PASS: $branch. Tracked files are clean and the release patch applies."
+    }
 }
 ~~~
 
-**Expected** The branch is `feature/customer-management` and the patch check passes. Personal untracked files, including the local Product runbook and patch, may appear. **If it fails** stop and resolve the checkout or missing patch without discarding local work. **Database** No connection or changes.
+**Expected** The branch is `feature/customer-management` and the patch either applies cleanly or is already present. Personal untracked files, including the local Product runbook and patch, may appear. **If it fails** stop and resolve the checkout or missing patch without discarding local work. **Database** No connection or changes.
 
 ## Step 2 — Configure the MySQL tools
 
@@ -319,17 +324,22 @@ Structural checks and SHA-256 confirm the file's markers and allow later byte-fo
 . {
     if ($customerVerified -ne 9) { throw 'Verified live V9 is required before route activation.' }
     Set-Location $customerRoot
-    git apply --check docs/customer-http-release.patch
-    if ($LASTEXITCODE -ne 0) { throw 'Customer patch check failed. Stop before changing source.' }
-    git apply docs/customer-http-release.patch
-    if ($LASTEXITCODE -ne 0) { throw 'Customer patch did not apply.' }
+    git apply --reverse --check docs/customer-http-release.patch 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host 'PASS: Customer routes are already enabled in this checkout.'
+    } else {
+        git apply --check docs/customer-http-release.patch
+        if ($LASTEXITCODE -ne 0) { throw 'Customer patch check failed. Stop before changing source.' }
+        git apply docs/customer-http-release.patch
+        if ($LASTEXITCODE -ne 0) { throw 'Customer patch did not apply.' }
+        Write-Host 'PASS: Customer route patch applied locally.'
+    }
     git status --short
     if ($LASTEXITCODE -ne 0) { throw 'Git status failed.' }
-    Write-Host 'PASS: Customer route patch applied locally.'
 }
 ~~~
 
-**Expected** Three tracked changes: `SecurityConfig.java`, `CustomerSecurityTest.java` and `SecurityConfigTest.java`. Existing untracked files may also appear. **If it fails** stop before starting the patched app and inspect the checkout. **Database** No connection or changes.
+**Expected** The released checkout requires no source change. A newly applied patch makes three tracked changes: `SecurityConfig.java`, `CustomerSecurityTest.java` and `SecurityConfigTest.java`. Existing untracked files may also appear. **If it fails** stop before starting the patched app and inspect the checkout. **Database** No connection or changes.
 
 ## Step 10 — Run tests, build and smoke-test
 

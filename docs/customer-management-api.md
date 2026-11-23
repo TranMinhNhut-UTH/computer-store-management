@@ -1,6 +1,6 @@
 # Customer Management V1
 
-`PAR-002` implements employee lookup, creation and information updates for customer records (FR-CUS-01–05). The signed-in screen is `/customers`. The four routes below are ready for isolated checks. Production denies these routes until the approved grants pass live V9 verification and the route patch is released.
+`PAR-002` implements employee lookup, creation and information updates for customer records (FR-CUS-01–05). The signed-in screen is `/customers`. The release source enables the four authenticated routes below. Deployment requires verifying V8/V9 and the approved grants on the target. Each operation checks its current server-side permission, and writes still require CSRF.
 
 | Method and path | Required permission | Success |
 |---|---|---|
@@ -39,4 +39,16 @@ Existing orders continue to use the nullable FK with `ON DELETE RESTRICT`. An in
 
 `CUSTOMER_DEACTIVATE` remains `PROVISIONAL_DENY`. V8 (checksum `151122022`) registers three codes. V9 (checksum `985142827`) adds exactly the four approved grants. Both scripts are outside normal Flyway discovery. See the [Windows rollout runbook](customer-runtime-activation.md) for real V1–V7 history checks, backup, separate stages and the post-V9 route patch.
 
-`CustomerRolloutIT` exercises the runner on disposable MySQL 8. It applies V1, checks fixture V2–V7 history against the original artifacts, then applies and verifies V8 and V9 separately. It also verifies duplicate-code rejection, nullable walk-in references, history preservation after an edit and the delete restriction. Live Customer smoke remains pending.
+`CustomerRolloutIT` exercises the runner on disposable MySQL 8. It applies V1, checks fixture V2–V7 history against the original artifacts, then applies and verifies V8 and V9 separately. It also verifies duplicate-code rejection, nullable walk-in references, history preservation after an edit and the delete restriction.
+
+## Local Customer smoke evidence
+
+| Session | Live browser result | Isolated security coverage |
+|---|---|---|
+| Anonymous | PASS. The Login screen rendered at `/customers`, and Customer list GET through Vite returned `401`. | `anonymousRequestsReturn401` |
+| MANAGER | PASS for list and read-only UI. The manager.csm session received HTTP 200 with an empty list and no allowed actions or create/edit controls. A missing Customer returned HTTP 404. Detail HTTP 200 remains PENDING until an existing record is available. | `managerReadIsAllowedWithRedactedContactAndWritesAreDenied` verifies list/detail `200`, no allowed actions and mutation `403`. |
+| ADMIN | PASS. The admin.csm session received HTTP 403 for list and detail, showed the access-denied message and offered no create/edit controls. | `adminAndWarehouseWithoutGrantsAreDenied` verifies list and mutation `403`. |
+| SALES_STAFF | PENDING. There is no local Sales Staff test account. | `salesCanUseAllFourRoutesAndReceivesOnlyGrantedActions` verifies list/detail `200`, create `201`, and update `200` with CSRF. |
+| WAREHOUSE_STAFF | PENDING. There is no local Warehouse Staff test account. | `adminAndWarehouseWithoutGrantsAreDenied` verifies list and mutation `403`. |
+
+The saved `CustomerSecurityTest` run passed all seven cases against the release configuration with isolated fixtures. These browser checks made no data changes. The route patch is applied. The Manager response verifies that the local runtime has an effective CUSTOMER_READ grant. The available smoke record does not include the operator’s V8/V9 history, checksums or full grant read-back. Retain that read-back before declaring the target rollout verified. Positive detail, Sales Staff and Warehouse Staff live checks remain pending.

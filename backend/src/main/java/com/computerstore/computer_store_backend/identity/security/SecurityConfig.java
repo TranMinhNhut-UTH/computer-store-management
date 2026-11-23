@@ -31,8 +31,8 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
-        // Keep Customer routes closed until the approved grants are deployed and verified.
-        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, false);
+        // Verify the Customer V9 grants before deploying this release.
+        return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
     }
 
     SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
