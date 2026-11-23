@@ -99,7 +99,7 @@ Các ID FND-008–011 thuộc Inventory Foundation của TV2, được đặt c�
 | PAY-001 | Payment | TV2 | TODO | TODO | TODO | TODO | Ghi nhận CASH/BANK_TRANSFER/CARD offline, void theo design; trạng thái thanh toán tính riêng, kiểm tra aggregate dưới khóa. DEP-002/003/004; SAL-002. |
 | PAY-002 | PaymentRefund | TV2 | TODO | TODO | TODO | TODO | Liên kết payment gốc, không vượt số đã thu; phối hợp cancel/return atomic, không xóa lịch sử. FND-009/011; DEP-007/008. |
 | RET-001 | SalesReturn/SalesReturnItem | TV2 | TODO | TODO | TODO | TODO | Đơn COMPLETED đã trả đủ, 7 ngày lịch; số trả lũy kế không vượt bán; chỉ restock phần bán lại được, refund khớp return. P07; DEP-007/008. |
-| RPT-001 | Basic Reports | TV1 | TODO | TODO | TODO | TODO | Doanh thu thuần, số bán/trả, tồn hiện tại/tồn thấp và lịch sử nhập-xuất theo design. Không lợi nhuận; không trừ cash refund lần nữa. DEP-008 và INV-001/002; P07. |
+| RPT-001 | Basic Reports | TV1 | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | Đã triển khai tổng hợp danh mục/sản phẩm/đối tác theo trạng thái với quyền đọc hiện có của MANAGER. Doanh thu thuần và số bán/trả chờ DEP-008/P07; tồn, tồn thấp và lịch sử nhập-xuất chờ INV-001/002 và DEP-001. [Reports API và bàn giao TV2](basic-reports-api.md). |
 
 ### Shared Frontend Foundation — milestone ngoài bảng task
 
