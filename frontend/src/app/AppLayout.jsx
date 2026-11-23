@@ -11,10 +11,12 @@ import { CategoryPage } from '../features/categories/CategoryPage.jsx'
 import { ProductPage } from '../features/products/ProductPage.jsx'
 import { SupplierPage } from '../features/suppliers/SupplierPage.jsx'
 import { CustomerPage } from '../features/customers/CustomerPage.jsx'
+import { ReportsPage } from '../features/reports/ReportsPage.jsx'
+import { reportsClient } from '../api/reports.js'
 import './shell.css'
 import '../components/ui/ui.css'
 
-const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage }
+const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage, reports: ReportsPage }
 
 const tabletQuery = '(min-width: 768px)'
 const desktopQuery = '(min-width: 1024px)'
@@ -39,6 +41,7 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   const current = useSyncExternalStore(subscribeNavigation, currentDestination)
   const selectedId = current.id
   const BusinessPage = businessPages[selectedId]
+  const [canViewReports, setCanViewReports] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawer = useRef(null)
   const closeButton = useRef(null)
@@ -47,6 +50,15 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
   useEffect(() => {
     if (window.location.pathname === '/login') navigateTo('overview', true)
   }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    reportsClient.canViewOverview({ signal: controller.signal }).then(
+      allowed => { if (!controller.signal.aborted) setCanViewReports(allowed) },
+      () => { if (!controller.signal.aborted) setCanViewReports(false) },
+    )
+    return () => controller.abort()
+  }, [user.userId])
 
   useEffect(() => {
     if (!mobile) setDrawerOpen(false)
@@ -83,9 +95,9 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
 
   return <div className={`csm-shell${!mobile && collapsed ? ' csm-shell--collapsed' : ''}`} data-app-shell="true" data-viewport={viewport}>
     <a className="csm-skip-link" href="#main-content">Đến nội dung chính</a>
-    {!mobile && <aside className="csm-desktop-sidebar"><Sidebar selectedId={selectedId} onSelect={select} collapsed={collapsed} /></aside>}
+    {!mobile && <aside className="csm-desktop-sidebar"><Sidebar selectedId={selectedId} onSelect={select} collapsed={collapsed} canViewReports={canViewReports} /></aside>}
     {mobile && <dialog ref={drawer} id="mobile-navigation" className="csm-drawer" aria-label="Điều hướng ứng dụng" onCancel={event => { event.preventDefault(); setDrawerOpen(false) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDrawerOpen(false) } }} onClick={event => { if (event.target === event.currentTarget) setDrawerOpen(false) }}>
-      {drawerOpen && <div className="csm-drawer-content"><Button ref={closeButton} variant="secondary" className="csm-close-menu" onClick={() => setDrawerOpen(false)}>Đóng điều hướng</Button><Sidebar selectedId={selectedId} onSelect={select} /></div>}
+      {drawerOpen && <div className="csm-drawer-content"><Button ref={closeButton} variant="secondary" className="csm-close-menu" onClick={() => setDrawerOpen(false)}>Đóng điều hướng</Button><Sidebar selectedId={selectedId} onSelect={select} canViewReports={canViewReports} /></div>}
     </dialog>}
     <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} />
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">

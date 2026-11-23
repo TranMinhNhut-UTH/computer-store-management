@@ -62,7 +62,8 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.POST, "/api/v1/customers").authenticated()
                                 .requestMatchers(HttpMethod.PUT, "/api/v1/customers/{id}").authenticated();
                     }
-                    authorize.anyRequest().denyAll();
+                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/reports/access", "/api/v1/reports/overview")
+                            .authenticated().anyRequest().denyAll();
                 })
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler))

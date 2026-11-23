@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
-let server, dom, App, ThemeProvider, root, container, authenticated, requests
+let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -37,6 +37,8 @@ before(async () => {
     if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
+    if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.endsWith('/reports/overview')) return reportResponse()
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
@@ -51,6 +53,8 @@ beforeEach(() => {
   requests = []
   window.history.replaceState(null, '', '/')
   authenticated = false
+  reportAccess = false
+  reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   viewportWidth = 1440
   mediaQueries.clear()
   localStorage.clear()
@@ -165,7 +169,7 @@ test('me-confirmed user sees shell and navigation changes only coming-soon conte
   assert.equal(container.querySelector('#page-title').textContent, '\u004bho h\u00e0ng')
   assert.equal(container.querySelector('aside [aria-current="page"]').dataset.navId, 'inventory')
   assert.match(container.querySelector('.csm-empty').textContent, /Chưa|chưa/)
-  assert.ok(requests.every(request => request.url.includes('/auth/')))
+  assert.ok(requests.every(request => request.url.includes('/auth/') || request.url.endsWith('/reports/access')))
   assert.equal(container.textContent.includes('Admin'), false)
   assert.equal(container.textContent.includes('test-token'), false)
 })
@@ -176,7 +180,7 @@ test('theme toggles persist across shell navigation', async () => {
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
-  await click(container.querySelector('aside [data-nav-id="reports"]'))
+  await click(container.querySelector('aside [data-nav-id="employees"]'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'light')
@@ -242,6 +246,7 @@ test('drawer close button, backdrop and navigation close the drawer', async () =
 
 test('desktop hamburger collapses and expands one sidebar, preserves selection and never opens a drawer', async () => {
   authenticated = true
+  reportAccess = true
   await render()
   const shell = container.querySelector('[data-app-shell]')
   const toggle = container.querySelector('.csm-menu-toggle')
@@ -326,13 +331,13 @@ test('theme and selection survive sidebar toggles and mobile navigation without 
   const startupRequests = requests.length
   await click(container.querySelector('.theme-toggle'))
   await click(container.querySelector('.csm-menu-toggle'))
-  await click(container.querySelector('[data-nav-id="reports"]'))
+  await click(container.querySelector('[data-nav-id="employees"]'))
   await resizeViewport(900)
   assert.equal(document.documentElement.dataset.theme, 'dark')
-  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'reports')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'employees')
   await resizeViewport(390)
   await click(container.querySelector('.csm-menu-toggle'))
-  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'reports')
+  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'employees')
   await click(container.querySelector('dialog [data-nav-id="inventory"]'))
   assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
   assert.equal(document.documentElement.dataset.theme, 'dark')
@@ -371,4 +376,56 @@ test('shared input connects label/error; loading button is disabled and cannot t
   await click(button)
   assert.equal(clicks, 0)
   assert.ok(container.querySelector('[role="status"]'))
+})
+
+test('reports remain hidden when the server denies access, even when opened directly', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/reports')
+  await render()
+  assert.equal(container.querySelector('[data-nav-id="reports"]'), null)
+  assert.match(container.querySelector('.reports-page [role=alert]').textContent, /không có quyền/)
+  assert.equal(container.querySelector('.reports-kpi'), null)
+})
+
+test('authorized reports show loading then SQL response totals and remain reachable at 375px', async () => {
+  authenticated = true
+  reportAccess = true
+  let complete
+  reportResponse = () => new Promise(resolve => { complete = resolve })
+  await render()
+  await click(container.querySelector('[data-nav-id="reports"]'))
+  assert.match(container.querySelector('.reports-page [role=status]').textContent, /Đang tải/)
+  const none = { total: 0, active: 0, inactive: 0 }
+  const products = { total: 3, active: 2, inactive: 1 }
+  await act(async () => complete(Response.json({
+    products, categories: { total: 1, active: 1, inactive: 0 }, suppliers: none, customers: none,
+    productsByCategory: [{ code: 'A', name: 'Fixture Category', products }],
+  })))
+  assert.deepEqual([...container.querySelectorAll('.reports-kpi strong')].map(node => node.textContent), ['3', '1', '0', '0'])
+  assert.match(container.querySelector('table').textContent, /Fixture Category/)
+  assert.match(container.querySelector('.reports-page').textContent, /đang chờ tích hợp/)
+  const request = requests.find(entry => entry.url.endsWith('/reports/overview'))
+  assert.equal(request.options.credentials, 'same-origin')
+  assert.equal(request.options.method, undefined)
+  await resizeViewport(375)
+  await click(container.querySelector('.csm-menu-toggle'))
+  assert.equal(container.querySelector('dialog [data-nav-id="reports"]').getAttribute('aria-current'), 'page')
+  assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
+})
+
+test('reports recover from a network error and distinguish an empty database', async () => {
+  authenticated = true
+  reportAccess = true
+  window.history.replaceState(null, '', '/reports')
+  reportResponse = () => { throw new Error('unavailable') }
+  await render()
+  assert.match(container.querySelector('.reports-page [role=alert]').textContent, /Không thể tải/)
+  const zero = { total: 0, active: 0, inactive: 0 }
+  reportResponse = () => Response.json({
+    products: zero, categories: zero, suppliers: zero, customers: zero, productsByCategory: [],
+  })
+  await click(container.querySelector('.reports-page button'))
+  assert.match(container.querySelector('.reports-page .csm-empty').textContent, /Chưa có danh mục/)
+  assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
+  assert.equal(container.querySelector('.reports-page table'), null)
 })
