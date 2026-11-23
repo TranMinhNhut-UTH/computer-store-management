@@ -38,7 +38,7 @@ before(async () => {
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
-    if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
@@ -134,7 +134,7 @@ test('direct Product navigation keeps the session gate and renders the denied st
   assert.equal(container.querySelector('.product-page table'), null)
 })
 
-test('the same authenticated shell navigates between Category, Product and Supplier', async () => {
+test('the authenticated shell navigates between Category, Product, Supplier and Customer', async () => {
   authenticated = true
   window.history.replaceState(null, '', '/products')
   await render()
@@ -143,9 +143,13 @@ test('the same authenticated shell navigates between Category, Product and Suppl
   assert.equal(window.location.pathname, '/suppliers')
   assert.equal(container.querySelector('#page-title').textContent, 'Quản lý nhà cung cấp')
   assert.match(container.querySelector('#supplier-page [role=alert]').textContent, /không có quyền/)
+  await click(container.querySelector('aside [data-nav-id="customers"]'))
+  assert.equal(window.location.pathname, '/customers')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý khách hàng')
+  assert.match(container.querySelector('#customer-page [role=alert]').textContent, /không có quyền/)
   await click(container.querySelector('aside [data-nav-id="categories"]'))
   assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
-  for (const module of ['products', 'suppliers', 'categories']) {
+  for (const module of ['products', 'suppliers', 'customers', 'categories']) {
     assert.equal(requests.filter(request => request.url.startsWith('/api/v1/' + module)).length, 1)
   }
   assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 1)
@@ -329,8 +333,8 @@ test('theme and selection survive sidebar toggles and mobile navigation without 
   await resizeViewport(390)
   await click(container.querySelector('.csm-menu-toggle'))
   assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'reports')
-  await click(container.querySelector('dialog [data-nav-id="customers"]'))
-  assert.equal(container.querySelector('#page-title').textContent, 'Khách hàng')
+  await click(container.querySelector('dialog [data-nav-id="inventory"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.length, 1)
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
