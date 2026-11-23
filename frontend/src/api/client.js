@@ -8,9 +8,19 @@ export class ApiError extends Error {
   }
 }
 
+let activeSession = null
+
+// Requests remember the session that was current when they were sent.
+export function observeSessionRejection(onRejected) {
+  const session = { onRejected }
+  activeSession = session
+  return () => { if (activeSession === session) activeSession = null }
+}
+
 // Shared transport: browser-managed cookies, no secrets in storage or raw server details in errors.
-export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis), acceptedFields = ['code', 'name', 'description']) {
+export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis), acceptedFields = ['code', 'name', 'description'], { recoverSession = true } = {}) {
   return async function request(path, options = {}) {
+    const session = recoverSession ? activeSession : null
     let response
     try {
       response = await fetchRequest(path, {
@@ -23,6 +33,9 @@ export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalTh
     }
     if (!response.ok) {
       const problem = await response.json().catch(() => null)
+      if (response.status === 401 && session && session === activeSession && !options.signal?.aborted) {
+        session.onRejected()
+      }
       const fields = Array.isArray(problem?.fieldErrors)
         ? problem.fieldErrors.map(item => item?.field).filter(field => acceptedFields.includes(field)) : []
       throw new ApiError(response.status, typeof problem?.code === 'string' ? problem.code : '', fields)

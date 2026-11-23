@@ -180,9 +180,11 @@ class StaffManagementIT {
         expect(403, admin.write("POST", STAFF + "/" + adminId + "/lock", null));
         expect(403, admin.write("PUT", STAFF + "/" + adminId + "/roles", Map.of("roles", List.of("MANAGER"))));
         assertFalse(expect(200, admin.write("POST", STAFF + "/" + id + "/lock", null)).get("active").asBoolean());
+        expect(401, staff.read("/api/v1/auth/me"));
         expect(401, staff.read("/api/v1/auth/ui-capabilities"));
         expect(401, new Session(port).write("POST", "/api/v1/auth/login", Map.of("username", "new.staff", "password", PASSWORD)));
         assertTrue(expect(200, admin.write("POST", STAFF + "/" + id + "/unlock", null)).get("active").asBoolean());
+        expect(200, staff.read("/api/v1/auth/me"));
         new Session(port).login("new.staff");
         expect(403, admin.write("DELETE", STAFF + "/" + id, null));
         assertEquals("new.staff", expect(200, admin.read(STAFF + "/" + id)).get("username").asString());

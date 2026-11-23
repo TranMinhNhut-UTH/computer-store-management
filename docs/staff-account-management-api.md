@@ -31,7 +31,7 @@ Invalid input returns `400`. Missing or inactive identity returns `401`. Missing
 
 ### P01 session and role changes
 
-- Locking does not invalidate existing HTTP sessions. A new request to Staff or another business use case that resolves the current actor returns `401` while the account is inactive. `GET /api/v1/auth/me` can still return `200` with the cached principal, so the shell may appear signed in. Session-only endpoints follow their existing rules.
+- Locking retains existing HTTP sessions. While the account is inactive, `GET /api/v1/auth/me` and business requests that resolve the current actor return `401`. The SPA clears the workspace when its current protected request returns `401`. Session-only endpoints such as logout follow their existing rules.
 - Each guarded business request reloads current roles and effective grants. Removing the last role that grants a permission takes effect on the next guarded request, typically `403` for an otherwise active account. If another assigned role still grants it, access remains. Grants restored by role assignment can take effect on the same session.
 - Unlocking can restore guarded access on an unexpired pre-lock session. Requests already past authorization are not canceled. Immediate session revocation and invalidation across nodes remain open under P01. For suspected compromise, keep the account locked until existing sessions have expired or an approved procedure has invalidated them. Do not use unlock as a session reset.
 
