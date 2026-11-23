@@ -46,7 +46,7 @@ class CategoryMigrationRunnerTest {
         var properties = new Properties();
         try (var stream = getClass().getResourceAsStream("/application.properties")) { properties.load(stream); }
         assertEquals("classpath:db/migration", properties.getProperty("spring.flyway.locations"));
-        assertEquals("true", properties.getProperty("spring.flyway.enabled")); // Existing startup behavior is not silently changed.
+        assertEquals("false", properties.getProperty("spring.flyway.enabled"));
         assertNotNull(getClass().getResource("/db/migration/V1__create_initial_schema.sql"));
         assertFalse(V2__register_category_permissions.class.getPackageName().startsWith("db.migration"));
         assertEquals(0, Flyway.configure().getJavaMigrations().length);

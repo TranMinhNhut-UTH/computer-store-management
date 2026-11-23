@@ -405,3 +405,40 @@ failure/error/skipped. Không gọi Flyway.load/migrate hoặc JDBC thật trong
 migration methods trên mock connections. Physical rollback, locks/concurrency, discovery và
 packaging với Flyway/MySQL thật, backup/recovery/E2E còn pending; không coi isolated PASS
 là migration đã applied. CAT-001 vẫn IN_PROGRESS; chưa commit/push phần source này.
+
+## 15. Product Permission Rollout V1 (V4/V5)
+
+This checkout provides executable source outside Spring Boot's default discovery. No Product migration was run. V4/V5 were unused in the fetched source refs. Live Flyway history and version availability must still be checked before execution. Category V2/V3 remain frozen.
+
+| Stage | Frozen artifact | Payload | Flyway checksum |
+|---|---|---|---|
+| A | `V4__register_product_permissions` | `PRODUCT_READ`, `PRODUCT_CREATE`, `PRODUCT_UPDATE`, `PRODUCT_PRICE_UPDATE`, `PRODUCT_DEACTIVATE`. Each has `name=code` and `description=NULL`. | `-1732158983` |
+| B | `V5__grant_product_permissions` | MANAGER receives all five. SALES_STAFF and WAREHOUSE_STAFF each receive READ only. ADMIN receives none. | `155246154` |
+
+The seven pairs are approved, and Warehouse CREATE/UPDATE are withdrawn. The Stage A manifest content SHA-256 remains `f7f1eb15a362171740a64ac2ff1fe9b7732c0f13b6d8d2f132d109b05873b6af`. Migration checksums are a separate CRC32 over the frozen contract, prerequisite history and SQL. Applied migration behavior is versioned. Future changes require a new version.
+
+The standalone runner accepts exactly `--product-permission-rollout`, `--stage=A` or `--stage=B`, and `--confirm-target=computer_store_dev`. Supply `DB_URL=jdbc:mysql://127.0.0.1:3306/computer_store_dev` with no query options and nonblank `DB_USERNAME` and `DB_PASSWORD` through the local terminal environment. Never pass passwords as CLI arguments. Use a separate execution approval and a maintenance window.
+
+For a future approved run, build the runtime classpath from `backend` without starting the application. Run Stage A first and inspect its history and catalog. Run Stage B separately after Stage A passes verification.
+
+```powershell
+.\mvnw.cmd -DskipTests compile dependency:build-classpath '-DincludeScope=runtime' '-Dmdep.outputFile=target/product-rollout-classpath.txt'
+if ($LASTEXITCODE -ne 0) { throw 'Product rollout classpath build failed.' }
+$productClasspath = 'target/classes;' + (Get-Content -LiteralPath 'target/product-rollout-classpath.txt' -Raw).Trim()
+$productRunner = 'com.computerstore.computer_store_backend.operations.product.v1.ProductPermissionMigrationRunner'
+java -cp $productClasspath $productRunner --product-permission-rollout --stage=A --confirm-target=computer_store_dev
+if ($LASTEXITCODE -ne 0) { throw 'Stage A stopped. Inspect history and catalog before continuing.' }
+```
+
+After confirming successful V4 and the five compatible rows, run Stage B in the same prepared terminal.
+
+```powershell
+java -cp $productClasspath $productRunner --product-permission-rollout --stage=B --confirm-target=computer_store_dev
+if ($LASTEXITCODE -ne 0) { throw 'Stage B stopped. Inspect history and mappings before retrying.' }
+```
+
+The runner checks the exact URL, selected schema, InnoDB, and ordered successful history including V1–V3 descriptions, types and checksums. It registers Category V2/V3 for validation, and a Flyway callback prohibits executing any version except the selected Product stage. Stage B requires V4 already applied. Matching already-applied stages are verified without inserts; Stage A is refused once V5 exists. Unknown versions, occupied incompatible history, or incomplete applied data cause the runner to stop. Do not rerun the Category-only runner on the expanded catalog.
+
+Each stage uses only insert statements inside Flyway's transaction. It preserves compatible IDs/timestamps and all existing unrelated permission/mapping rows, checks pre/post snapshots, and rejects incompatible metadata, unknown roles, duplicate/orphan links and any unapproved Product mapping. Exceptions propagate to Flyway for rollback. After execution the runner reads back history and the relevant data. On an error, inspect history and rows before any retry. No automatic repair or cleanup is performed.
+
+Before live Product use, confirm the exact five rows and seven pairs after the controlled rollout, then release only the six Product routes and verify the role/CSRF matrix. Product creation remains blocked until TV2's DEP-001 atomic Inventory initialization is integrated and verified. Default startup discovery and existing Category behavior were not changed.

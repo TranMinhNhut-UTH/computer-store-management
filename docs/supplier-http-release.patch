@@ -1,0 +1,51 @@
+--- a/backend/src/main/java/com/computerstore/computer_store_backend/identity/security/SecurityConfig.java
++++ b/backend/src/main/java/com/computerstore/computer_store_backend/identity/security/SecurityConfig.java
+@@ -32,6 +32,6 @@
+             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
+             XorCsrfTokenRequestAttributeHandler csrfHandler) throws Exception {
+-        // Supplier rollout is pending explicit grant approval and live read-back.
+-        return buildSupplierBoundary(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, false);
++        // Supplier V7 live read-back passed. SupplierService enforces each operation grant.
++        return buildSupplierBoundary(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler, true);
+     }
+ 
+--- a/backend/src/test/java/com/computerstore/computer_store_backend/catalog/CategorySecurityTest.java
++++ b/backend/src/test/java/com/computerstore/computer_store_backend/catalog/CategorySecurityTest.java
+@@ -194,7 +194,5 @@
+         for (var request : List.of(delete(BASE + "/7"), patch(BASE + "/7"), post(BASE + "/7/reactivate"),
+                 get(BASE + "/7/deactivate"), get(BASE + "/7/products"), post(BASE + "/bulk"),
+-                put(BASE), head(BASE), options(BASE), get("/api/v1/products"), get("/api/v1/inventory"), post("/api/v1/sales"),
+-                get("/api/v1/suppliers"), get("/api/v1/suppliers/7"), post("/api/v1/suppliers"),
+-                put("/api/v1/suppliers/7"), post("/api/v1/suppliers/7/deactivate"))) {
++                put(BASE), head(BASE), options(BASE), get("/api/v1/products"), get("/api/v1/inventory"), post("/api/v1/sales"))) {
+             mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
+         }
+--- a/backend/src/test/java/com/computerstore/computer_store_backend/identity/security/SupplierSecurityTest.java
++++ b/backend/src/test/java/com/computerstore/computer_store_backend/identity/security/SupplierSecurityTest.java
+@@ -24,10 +24,5 @@
+ import org.springframework.data.domain.PageImpl;
+ import org.springframework.http.MediaType;
+-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+ import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+-import org.springframework.security.web.SecurityFilterChain;
+-import org.springframework.security.web.context.SecurityContextRepository;
+-import org.springframework.security.web.csrf.CsrfTokenRepository;
+-import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
+ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+ import org.springframework.test.context.web.WebAppConfiguration;
+@@ -166,13 +161,8 @@
+ 
+     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
+-    @Import({ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
++    @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class, EmployeeUserDetailsService.class,
+             SupplierController.class, SupplierService.class, GlobalExceptionHandler.class, CurrentActorService.class,
+             RoleResolutionService.class, AuthorizationService.class, PermissionPolicy.class})
+-    static class Fixture extends SecurityConfig {
+-        @Bean @Override SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
+-                ApiAuthenticationEntryPoint entry, ApiAccessDeniedHandler denied, SecurityContextRepository contexts,
+-                CsrfTokenRepository csrf, XorCsrfTokenRequestAttributeHandler handler) throws Exception {
+-            return buildSupplierBoundary(http, entry, denied, contexts, csrf, handler, true);
+-        }
++    static class Fixture {
+         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
+         @Bean SupplierRepository suppliers() { return mock(SupplierRepository.class); }
