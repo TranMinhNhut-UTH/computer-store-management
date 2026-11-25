@@ -30,7 +30,7 @@ Cookie dùng Secure khi chạy HTTPS; SameSite, domain, path và ngoại lệ de
 
 **Lý do:** hỗ trợ logout/revocation trực tiếp và không cần thêm cơ chế JWT khi chưa có nhu cầu cụ thể. **Phạm vi:** identity, mọi API được bảo vệ và frontend.
 
-**APPROVED — P01 V1:** Quyết định mới của người vận hành trong task “P01 Session Revocation V1”. Khóa tài khoản hoặc thay đổi tập vai trò làm mất hiệu lực mọi phiên trước đó sau khi transaction commit. Mở khóa không phục hồi phiên. Logout hủy phiên hiện tại và giữ CSRF. Nâng schema bằng V12 theo [runbook](session-revocation-rollout.md). Idle/absolute timeout, giới hạn phiên đồng thời và chính sách khi đổi mật khẩu vẫn cần quyết định riêng.
+**APPROVED — P01 V1:** Quyết định mới của người vận hành trong task “P01 Session Revocation V1”. Khóa tài khoản hoặc thay đổi tập vai trò làm mất hiệu lực mọi phiên trước đó sau khi transaction commit. Mở khóa không phục hồi phiên. Logout hủy phiên hiện tại và giữ CSRF. Nâng schema bằng V12 theo [runbook](session-revocation-rollout.md). Idle/absolute timeout và giới hạn phiên đồng thời vẫn cần quyết định riêng. Phê duyệt mới trong task Employee Change Password V1 bổ sung thu hồi mọi phiên sau khi đổi mật khẩu thành công.
 
 **PENDING:** session idle/absolute timeout, concurrent sessions; deployment cùng/khác origin; cấu hình cookie Secure/SameSite/domain/path; CSRF token exchange và vòng đời token; allowlist CORS; quy trình bootstrap Admin một lần, ai thực hiện và cách cấp secret an toàn. Chưa chọn timeout hoặc cơ chế bootstrap cụ thể.
 

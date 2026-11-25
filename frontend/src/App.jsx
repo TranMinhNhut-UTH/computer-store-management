@@ -32,13 +32,13 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false)
   const operationInFlight = useRef(false)
   const stopObservingSession = useRef(null)
-  const focusAfterRejection = useRef(false)
+  const focusSignIn = useRef(false)
   const loginName = useRef(null)
 
   function replaceSession(currentUser) {
     stopObservingSession.current?.()
     stopObservingSession.current = currentUser ? observeSessionRejection(() => {
-      focusAfterRejection.current = true
+      focusSignIn.current = true
       replaceSession(null)
       setPassword('')
       setShowPassword(false)
@@ -49,8 +49,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!user && focusAfterRejection.current && !busy) {
-      focusAfterRejection.current = false
+    if (!user && focusSignIn.current && !busy) {
+      focusSignIn.current = false
       loginName.current?.focus()
     }
   }, [user, busy])
@@ -135,7 +135,27 @@ export default function App() {
     }
   }
 
-  if (user) return <AppLayout user={user} onLogout={handleLogout} loggingOut={busy === 'logout'} error={error} notice={notice} />
+  async function handleChangePassword(credentials) {
+    if (operationInFlight.current) return
+    operationInFlight.current = true
+    setBusy('password')
+    const session = stopObservingSession.current
+    try {
+      await authClient.changePassword(credentials)
+      if (stopObservingSession.current !== session) return
+      focusSignIn.current = true
+      replaceSession(null)
+      setUsername(user.username)
+      setError('')
+      setNotice('Đã đổi mật khẩu. Vui lòng đăng nhập lại bằng mật khẩu mới.')
+    } finally {
+      operationInFlight.current = false
+      setBusy(null)
+    }
+  }
+
+  if (user) return <AppLayout user={user} onLogout={handleLogout} onChangePassword={handleChangePassword}
+    changingPassword={busy === 'password'} loggingOut={busy === 'logout'} error={error} notice={notice} />
 
   return (
     <main className="auth-page">

@@ -5,6 +5,7 @@ const BASE_URL = '/api/v1/auth'
 // Cookies stay browser-managed; CSRF tokens exist only in request scope, never browser storage.
 export function createAuthClient(fetchRequest = globalThis.fetch.bind(globalThis)) {
   const transport = createApiTransport(fetchRequest, undefined, { recoverSession: false })
+  const protectedTransport = createApiTransport(fetchRequest)
   const request = (path, options) => transport(`${BASE_URL}${path}`, options)
 
   function currentUser(payload) {
@@ -26,9 +27,9 @@ export function createAuthClient(fetchRequest = globalThis.fetch.bind(globalThis
     }
   }
 
-  async function post(path, body) {
+  async function post(path, body, send = transport) {
     const csrf = await refreshCsrf()
-    return request(path, {
+    return send(`${BASE_URL}${path}`, {
       method: 'POST',
       headers: { [csrf.headerName]: csrf.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -39,6 +40,9 @@ export function createAuthClient(fetchRequest = globalThis.fetch.bind(globalThis
     refreshCsrf,
     getCurrentUser,
     async login({ username, password }) { return currentUser(await post('/login', { username, password })) },
+    async changePassword({ currentPassword, newPassword }) {
+      await post('/change-password', { currentPassword, newPassword }, protectedTransport)
+    },
     async logout() { await post('/logout') },
   }
 }

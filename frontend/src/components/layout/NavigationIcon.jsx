@@ -15,6 +15,7 @@ const paths = {
   adjustments: 'M4 3v7 M4 14v7 M12 3v11 M12 18v3 M20 3v3 M20 10v11 M1 10h6 M9 18h6 M17 6h6',
   employees: 'M5 4h14v17H5z M9 4V2h6v2 M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M8 18a4 4 0 0 1 8 0',
   reports: 'M3 3v18h18 M7 17v-5 M12 17V7 M17 17V4',
+  'account-security': 'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 14v3',
   menu: 'M4 6h16 M4 12h16 M4 18h16',
 }
 

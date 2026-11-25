@@ -106,3 +106,9 @@ Login binds the current version to the detached servlet-session principal. An em
 Revocation takes effect when the Staff transaction commits. Requests that have already passed the relevant authorization checks can finish using the authorization they obtained. Revocation does not cancel running transactions, replace servlet session storage, or set new idle/absolute timeouts or concurrent-session limits. Sessions issued without a version require fresh login.
 
 V12 is an explicit, separately deployed schema prerequisite. All backend instances must read the committed version from the same primary database, even if they keep separate servlet session stores. Follow the [P01 rollout runbook](session-revocation-rollout.md).
+
+## Employee Change Password V1
+
+The operator approved self-service password changes in the Change Password implementation brief as new V1 scope. Any authenticated, active employee can open Account Security and call `POST /api/v1/auth/change-password` with the session cookie, a valid CSRF header and JSON containing only `currentPassword` and `newPassword` strings. The server identifies the employee through the current session. Both inputs follow the existing BCrypt rules, including the 72-byte UTF-8 limit and exact preservation of spaces and Unicode. Confirmation stays in the form.
+
+Success returns `204`. The write serializes with Staff account changes and commits the BCrypt hash, audit timestamp and advanced P01 version together. Old sessions, including the caller, then receive `401` on protected requests. The SPA shows confirmation and requires fresh sign-in. Invalid input or an incorrect current password returns `400`, and a current session with missing or invalid CSRF receives `403`. A rollback preserves the previous hash and sessions. This uses the existing V12 column.

@@ -287,7 +287,7 @@ class StaffManagementIT {
                 """, Integer.class));
     }
 
-    private static void fixture(JdbcTemplate db, String username, String role) {
+    static void fixture(JdbcTemplate db, String username, String role) {
         db.update("INSERT INTO app_user (username,password_hash,full_name,created_at,updated_at) VALUES (?,?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))",
                 username, new BCryptPasswordEncoder().encode(PASSWORD), username);
         db.update("INSERT INTO user_role (user_id,role_id,assigned_at) SELECT u.id,r.id,UTC_TIMESTAMP(6) FROM app_user u,app_role r WHERE u.username=? AND r.code=?",
@@ -309,18 +309,22 @@ class StaffManagementIT {
         return db.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
     }
 
-    private static JsonNode expect(int status, HttpResponse<String> response) {
+    static JsonNode expect(int status, HttpResponse<String> response) {
         assertEquals(status, response.statusCode(), "Unexpected HTTP response");
         return response.body().isEmpty() ? null : JSON.readTree(response.body());
     }
 
-    private static final class Session {
+    static final class Session {
         final HttpClient client = HttpClient.newBuilder().cookieHandler(new CookieManager()).connectTimeout(Duration.ofSeconds(5)).build();
         final String base;
         Session(int port) { base = "http://127.0.0.1:" + port; }
 
         JsonNode login(String username) throws Exception {
-            return expect(200, write("POST", "/api/v1/auth/login", Map.of("username", username, "password", PASSWORD)));
+            return login(username, PASSWORD);
+        }
+
+        JsonNode login(String username, String password) throws Exception {
+            return expect(200, write("POST", "/api/v1/auth/login", Map.of("username", username, "password", password)));
         }
 
         JsonNode csrf() throws Exception { return expect(200, read("/api/v1/auth/csrf")); }
