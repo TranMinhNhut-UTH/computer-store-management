@@ -1,8 +1,8 @@
 package com.computerstore.computer_store_backend.identity.bootstrap;
 
+import com.computerstore.computer_store_backend.identity.security.BcryptPasswordInput;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,20 +24,7 @@ public final class AdminBootstrapRequest implements AutoCloseable {
                 || fullName.strip().codePointCount(0, fullName.strip().length()) > 150
                 || !StandardCharsets.UTF_8.newEncoder().canEncode(fullName)
                 || fullName.codePoints().anyMatch(Character::isISOControl)
-                || password == null || password.length == 0
-                || CharBuffer.wrap(password).chars().allMatch(Character::isWhitespace)) {
-            throw new AdminBootstrapException(INVALID_INPUT);
-        }
-        // BCrypt accepts at most 72 UTF-8 bytes. Never trim or normalize a password.
-        try {
-            var bytes = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(password));
-            try {
-                if (bytes.remaining() > 72) throw new AdminBootstrapException(INVALID_INPUT);
-            } finally {
-                bytes.clear();
-                while (bytes.hasRemaining()) bytes.put((byte) 0);
-            }
-        } catch (CharacterCodingException ignored) {
+                || password == null || !BcryptPasswordInput.isValid(CharBuffer.wrap(password))) {
             throw new AdminBootstrapException(INVALID_INPUT);
         }
         this.username = normalized;

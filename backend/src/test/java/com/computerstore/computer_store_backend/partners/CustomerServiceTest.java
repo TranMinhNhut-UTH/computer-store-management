@@ -108,13 +108,11 @@ class CustomerServiceTest {
     }
 
     @Test void salesSelectionChecksActiveUnderLockWithoutMutatingTheCustomer() throws Exception {
-        var row = customer();
-        when(repo.findForUpdate(ID)).thenReturn(Optional.of(row));
+        when(repo.lockActiveState(ID)).thenReturn(Optional.of(1), Optional.of(0));
         service.requireActiveForSale(ID);
-        row.setActive(false);
         assertCode(ErrorCode.BUSINESS_CONFLICT, () -> service.requireActiveForSale(ID));
         assertCode(ErrorCode.RESOURCE_NOT_FOUND, () -> service.requireActiveForSale(7));
-        assertEquals(CREATED, row.getUpdatedAt());
+        assertCode(ErrorCode.VALIDATION_ERROR, () -> service.requireActiveForSale(0));
         verify(repo, never()).saveAndFlush(any());
         var contract = CustomerService.class.getMethod("requireActiveForSale", long.class)
                 .getAnnotation(org.springframework.transaction.annotation.Transactional.class);

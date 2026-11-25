@@ -40,10 +40,10 @@ after(async () => { await server.close(); dom.window.close() })
 
 const button = label => [...container.querySelectorAll('button')].find(item => item.textContent === label)
 const byLabel = label => container.querySelector(`button[aria-label="${label}"]`)
-async function render(allowedActions = [], permissions = []) {
+async function render(allowedActions = [], permissions = [], categoryApi = categories) {
   const list = client.list
   client.list = async (...args) => ({ ...await list(...args), allowedActions })
-  await act(async () => root.render(createElement(ProductPage, { client, categories, permissions })))
+  await act(async () => root.render(createElement(ProductPage, { client, categories: categoryApi, permissions })))
 }
 async function click(el) { assert.ok(el); await act(async () => el.click()) }
 async function change(selector, value) {
@@ -106,6 +106,44 @@ test('Product creation form is inspectable but cannot submit without DEP-001', a
   assert.equal(calls.some(([action]) => action === 'create'), false)
 })
 
+test('Product category lookup returns to an available page when the result shrinks', async () => {
+  const pages = []
+  const categoryApi = { async list({ page }) {
+    pages.push(page)
+    if (page === 1) return { items: [], totalPages: 1 }
+    return { items: [{ id: '8', code: 'NEW', name: 'Danh mục mới' }], totalPages: pages.length === 1 ? 2 : 1 }
+  } }
+  await render(['PRODUCT_UPDATE'], [], categoryApi)
+  await click(byLabel('Sửa sản phẩm CPU'))
+  await click(button('Danh mục sau'))
+  assert.deepEqual(pages, [0, 1, 0])
+  const picker = container.querySelector('#product-category')
+  assert.equal(picker.value, product.categoryId)
+  assert.ok(picker.querySelector('option[value="8"]'))
+  assert.equal(button('Danh mục sau'), undefined)
+})
+
+test('Product category lookup retries a transient failure without retrying a permission denial', async () => {
+  let status = 0
+  let attempts = 0
+  const categoryApi = { async list() {
+    attempts++
+    if (attempts === 1 || status === 403) throw { status }
+    return categories.list()
+  } }
+  await render(['PRODUCT_UPDATE'], [], categoryApi)
+  await click(byLabel('Sửa sản phẩm CPU'))
+  assert.match(container.querySelector('dialog [role=alert]').textContent, /Không thể kết nối/)
+  await click(button('Thử lại'))
+  assert.equal(attempts, 2)
+  assert.ok(container.querySelector('#product-category option[value="7"]'))
+  status = 403
+  await change('dialog input[maxlength="120"]', 'restricted')
+  assert.match(container.querySelector('dialog [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(button('Thử lại'), undefined)
+  assert.equal(attempts, 3)
+})
+
 test('A superseded Product search cannot overwrite a newer empty result', async () => {
   const requests = []
   client.list = (query, { signal }) => new Promise(resolve => requests.push({ resolve, signal }))
@@ -129,10 +167,15 @@ test('Product edit form leaves price in a separate command and preserves a 19-di
   assert.equal(container.querySelector('dialog'), null)
   await click(byLabel('Đổi giá bán CPU'))
   assert.equal(container.querySelector('dialog [name=sku]'), null)
-  await change('dialog [name=sellingPrice]', '1.25')
-  await submit()
-  assert.ok(container.querySelector('dialog [aria-invalid=true]'))
-  assert.equal(calls.some(([action]) => action === 'price'), false)
+  const priceField = container.querySelector('dialog [name=sellingPrice]')
+  assert.equal(priceField.hasAttribute('maxlength'), false)
+  for (const invalid of ['1.25', '1e6', '0001', '99999999999999999999']) {
+    await change('dialog [name=sellingPrice]', invalid)
+    await submit()
+    assert.equal(priceField.value, invalid)
+    assert.equal(priceField.getAttribute('aria-invalid'), 'true')
+    assert.equal(calls.some(([action]) => action === 'price'), false)
+  }
   await change('dialog [name=sellingPrice]', '9223372036854775808')
   await submit()
   assert.deepEqual(calls.find(([action]) => action === 'price'), ['price', product.id, '9223372036854775808'])

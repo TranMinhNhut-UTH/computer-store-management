@@ -7,6 +7,7 @@ import com.computerstore.computer_store_backend.identity.authorization.RoleResol
 import com.computerstore.computer_store_backend.partners.SupplierPermissionRolloutIT.DisposableMysql;
 import com.computerstore.computer_store_backend.reports.ReportsOverview.ProductCategoryCount;
 import com.computerstore.computer_store_backend.reports.ReportsOverview.StatusCounts;
+import com.computerstore.computer_store_backend.reports.ReportsOverview;
 import com.computerstore.computer_store_backend.reports.ReportsRepository;
 import com.computerstore.computer_store_backend.reports.ReportsService;
 import java.nio.file.Path;
@@ -16,6 +17,7 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -52,6 +54,20 @@ class ReportsOverviewIT {
                     new ProductCategoryCount("B", "Inactive category", new StatusCounts(1, 1, 0)),
                     new ProductCategoryCount("Z", "Empty category", zero)), overview.productsByCategory());
             assertEquals(before, snapshot(db));
+
+            // A concurrent writer commits immediately after the first response query.
+            // With a second SQL read under READ COMMITTED, its breakdown would see the change.
+            var interleaved = spy(db);
+            doAnswer(call -> {
+                Object response = call.callRealMethod();
+                db.update("UPDATE product SET is_active=FALSE WHERE sku='P1'");
+                return response;
+            }).when(interleaved).query(anyString(), org.mockito.ArgumentMatchers.<ResultSetExtractor<ReportsOverview>>any());
+            var consistent = new ReportsService(roles, new ReportsRepository(interleaved)).overview();
+            assertEquals(overview, consistent);
+            var refreshed = reports.overview();
+            assertEquals(new StatusCounts(3, 1, 2), refreshed.products());
+            assertEquals(new StatusCounts(2, 0, 2), refreshed.productsByCategory().getFirst().products());
         }
     }
 

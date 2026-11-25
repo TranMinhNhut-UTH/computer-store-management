@@ -10,13 +10,13 @@ import com.computerstore.computer_store_backend.identity.entity.UserRole;
 import com.computerstore.computer_store_backend.identity.repository.AppRoleRepository;
 import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import com.computerstore.computer_store_backend.identity.repository.UserRoleRepository;
+import com.computerstore.computer_store_backend.identity.security.BcryptPasswordInput;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
 import java.util.HashSet;
@@ -222,18 +222,9 @@ public class StaffService {
     }
 
     private String encode(char[] password) {
-        if (password == null || password.length == 0 || CharBuffer.wrap(password).chars().allMatch(Character::isWhitespace)) {
-            throw invalid();
-        }
-        try {
-            var bytes = StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(password));
-            try { if (bytes.remaining() > 72) throw invalid(); }
-            finally {
-                bytes.clear();
-                while (bytes.hasRemaining()) bytes.put((byte) 0);
-            }
-        } catch (CharacterCodingException failure) { throw invalid(); }
-        return passwords.encode(CharBuffer.wrap(password));
+        var input = password == null ? null : CharBuffer.wrap(password);
+        if (!BcryptPasswordInput.isValid(input)) throw invalid();
+        return passwords.encode(input);
     }
 
     private void save(AppUser user) {

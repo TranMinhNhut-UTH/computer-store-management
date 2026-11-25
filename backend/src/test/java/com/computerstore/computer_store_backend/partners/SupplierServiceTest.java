@@ -55,6 +55,28 @@ class SupplierServiceTest {
         });
     }
 
+    @Test void purchasingLocksBothRowsInAscendingOrderAndChecksTheNewSupplier() throws Exception {
+        when(repo.lockActiveState(5L)).thenReturn(Optional.of(1));
+        when(repo.lockActiveState(9L)).thenReturn(Optional.of(0));
+        service.requireActiveForPurchase(5L, 9L);
+        var ordered = inOrder(repo);
+        ordered.verify(repo).lockActiveState(5L);
+        ordered.verify(repo).lockActiveState(9L);
+        var failure = assertThrows(BusinessException.class, () -> service.requireActiveForPurchase(9L, 5L));
+        assertEquals(ErrorCode.BUSINESS_CONFLICT, failure.code());
+        ordered.verify(repo).lockActiveState(5L);
+        ordered.verify(repo).lockActiveState(9L);
+        service.requireActiveForPurchase(5L, 5L);
+        ordered.verify(repo).lockActiveState(5L);
+        ordered.verifyNoMoreInteractions();
+        assertEquals(ErrorCode.RESOURCE_NOT_FOUND,
+                assertThrows(BusinessException.class, () -> service.requireActiveForPurchase(7L, null)).code());
+        assertEquals(ErrorCode.VALIDATION_ERROR,
+                assertThrows(BusinessException.class, () -> service.requireActiveForPurchase(5L, 0L)).code());
+        verify(repo, never()).saveAndFlush(any());
+        verifyNoInteractions(policy);
+    }
+
     @Test void listEscapesWildcardsAndUsesStablePagination() {
         var page = PageRequest.of(0, 20, Sort.by("name", "id"));
         when(repo.search("%x!%!_!!%", false, page)).thenReturn(new PageImpl<>(List.of(supplier())));

@@ -37,23 +37,37 @@ function errorMessage(failure, action) {
 }
 
 function CategoryPicker({ client, current, value, onChange, error }) {
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(0)
-  const [result, setResult] = useState(null)
-  const [failure, setFailure] = useState(null)
+  const [query, setQuery] = useState({ search: '', page: 0 })
+  const [attempt, retry] = useState(0)
+  const [settled, setSettled] = useState(null)
+  const { search, page } = query
+  const response = settled?.query === query && settled.attempt === attempt ? settled : null
+  const result = response?.result
+  const failure = response?.failure
+
   useEffect(() => {
     const controller = new AbortController()
-    setResult(null)
-    setFailure(null)
-    client.list({ active: 'true', q: search.trim(), page, size: 20 }, { signal: controller.signal }).then(data => {
-      if (!controller.signal.aborted) setResult(data)
-    }).catch(error => { if (!controller.signal.aborted) setFailure(error) })
+    const { search, page } = query
+    client.list({ active: 'true', q: search.trim(), page, size: 20 }, { signal: controller.signal }).then(result => {
+      if (controller.signal.aborted) return
+      if (page > 0 && page >= result.totalPages) {
+        setQuery(previous => previous === query ? { ...query, page: Math.max(0, result.totalPages - 1) } : previous)
+      } else {
+        setSettled({ query, attempt, result })
+      }
+    }).catch(failure => {
+      if (!controller.signal.aborted) setSettled({ query, attempt, failure })
+    })
     return () => controller.abort()
-  }, [client, search, page])
+  }, [client, query, attempt])
+
+  function setPage(page) { setQuery(previous => ({ ...previous, page })) }
+
   const choices = result?.items ?? []
   const chosen = choices.some(item => item.id === value)
   return <div className="csm-field">
-    <TextInput label="Tìm danh mục đang sử dụng" value={search} maxLength={120} onChange={event => { setSearch(event.target.value); setPage(0) }} />
+    <TextInput label="Tìm danh mục đang sử dụng" value={search} maxLength={120}
+      onChange={event => setQuery({ search: event.target.value, page: 0 })} />
     <label htmlFor="product-category">Danh mục</label>
     <select id="product-category" name="categoryId" value={value} onChange={onChange} aria-invalid={Boolean(error) || undefined}
       aria-describedby={error ? 'product-category-error' : undefined}>
@@ -62,7 +76,8 @@ function CategoryPicker({ client, current, value, onChange, error }) {
       {choices.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
     </select>
     {error && <p id="product-category-error" className="csm-field-error">{error}</p>}
-    {failure ? <p role="alert">{errorMessage(failure)}</p> : !result ? <p role="status">Đang tải danh mục…</p> : <>
+    {failure ? <ListError status={failure.status} message={errorMessage(failure)} onRetry={() => retry(count => count + 1)} />
+      : !result ? <p role="status">Đang tải danh mục…</p> : <>
       {choices.length === 0 && <p>Không tìm thấy danh mục đang sử dụng.</p>}
       {result.totalPages > 1 && <div className="product-actions">
         <Button variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Danh mục trước</Button>
@@ -250,7 +265,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
                 </div>
                 {field('minStockLevel', 'Ngưỡng tồn thấp', { required: true, inputMode: 'numeric', maxLength: 19 })}
               </>}
-              {(action === 'price' || action === 'create') && field('sellingPrice', 'Giá bán (₫)', { required: true, inputMode: 'numeric', maxLength: 19, 'data-initial-focus': action === 'price' || undefined })}
+              {(action === 'price' || action === 'create') && field('sellingPrice', 'Giá bán (₫)', { required: true, inputMode: 'numeric', 'data-initial-focus': action === 'price' || undefined })}
             </fieldset>}
           <footer>
             <Button data-initial-focus={action === 'deactivate' || undefined} variant="secondary" disabled={saving} onClick={close}>Hủy</Button>

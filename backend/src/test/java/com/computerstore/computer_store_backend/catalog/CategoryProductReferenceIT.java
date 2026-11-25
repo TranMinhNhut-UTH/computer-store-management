@@ -1,10 +1,14 @@
 package com.computerstore.computer_store_backend.catalog;
 
 import com.computerstore.computer_store_backend.catalog.controller.CategoryController;
+import com.computerstore.computer_store_backend.catalog.dto.request.ProductPriceRequest;
+import com.computerstore.computer_store_backend.catalog.dto.request.ProductWriteRequest;
 import com.computerstore.computer_store_backend.catalog.entity.Category;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
 import com.computerstore.computer_store_backend.catalog.repository.CategoryRepository;
+import com.computerstore.computer_store_backend.catalog.repository.ProductRepository;
 import com.computerstore.computer_store_backend.catalog.service.CategoryService;
+import com.computerstore.computer_store_backend.catalog.service.ProductService;
 import com.computerstore.computer_store_backend.identity.authorization.AuthorizationService;
 import com.computerstore.computer_store_backend.identity.authorization.CurrentActor;
 import com.computerstore.computer_store_backend.identity.authorization.EmployeeRole;
@@ -18,6 +22,8 @@ import com.computerstore.computer_store_backend.identity.security.ApiAuthenticat
 import com.computerstore.computer_store_backend.identity.security.EmployeeUserDetailsService;
 import com.computerstore.computer_store_backend.identity.security.SecurityConfig;
 import com.computerstore.computer_store_backend.shared.error.GlobalExceptionHandler;
+import com.computerstore.computer_store_backend.shared.error.BusinessException;
+import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import jakarta.persistence.EntityManager;
@@ -53,6 +59,8 @@ import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.orm.jpa.persistenceunit.PersistenceManagedTypes;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
@@ -99,11 +107,7 @@ class CategoryProductReferenceIT {
             transactions.setReadOnly(true);
             Snapshot before = transactions.execute(status -> snapshot(jdbc));
 
-            try (var context = new GenericWebApplicationContext()) {
-                context.setServletContext(new MockServletContext());
-                context.registerBean(DataSource.class, () -> datasource);
-                new AnnotatedBeanDefinitionReader(context).register(Fixture.class);
-                context.refresh();
+            try (var context = application(datasource)) {
                 var mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
                 mvc.perform(post("/api/v1/categories/7/deactivate").with(user(MANAGER).roles("MANAGER")).with(csrf()))
                         .andExpect(status().isConflict())
@@ -122,6 +126,69 @@ class CategoryProductReferenceIT {
         }
     }
 
+    @Test void productCommandsPreserveChangesCommittedAfterTheirTransactionLoadedTheRow() throws Exception {
+        String home = System.getProperty("csm.mysql.home");
+        assertNotNull(home, "Set csm.mysql.home to an installed Windows MySQL server");
+        try (var mysql = DisposableMysql.start(Path.of(home), directory)) {
+            var source = mysql.createSchema();
+            var external = new JdbcTemplate(mysql.dataSource(SCHEMA));
+            external.update("""
+                    INSERT INTO category (id, code, name, created_at, updated_at) VALUES
+                    (7, 'START', 'Original category', '2026-01-01', '2026-01-02'),
+                    (8, 'OTHER', 'Unlinked category', '2026-01-01', '2026-01-02')
+                    """);
+            external.update("""
+                    INSERT INTO product (id, sku, name, category_id, selling_price, created_at, updated_at)
+                    VALUES (11, 'IT', 'Original Product', 7, 1000, '2026-01-01', '2026-01-02')
+                    """);
+            try (var context = application(source)) {
+                var tx = new TransactionTemplate(context.getBean(JpaTransactionManager.class));
+                var products = context.getBean(ProductRepository.class);
+                var categories = context.getBean(CategoryRepository.class);
+                var service = context.getBean(ProductService.class);
+                SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                        MANAGER, null, List.of(new SimpleGrantedAuthority("ROLE_MANAGER"))));
+                try {
+                    tx.executeWithoutResult(status -> {
+                        assertEquals("1000", products.findById(11L).orElseThrow().getSellingPrice().toPlainString());
+                        external.update("UPDATE product SET selling_price=9999999999999999999, is_active=FALSE WHERE id=11");
+                        var result = service.update("11", new ProductWriteRequest("IT", "Edited", "7", null, null, null, "0"));
+                        assertEquals("9999999999999999999", result.sellingPrice());
+                        assertFalse(result.active());
+                    });
+                    tx.executeWithoutResult(status -> {
+                        assertEquals("Edited", products.findById(11L).orElseThrow().getName());
+                        external.update("UPDATE product SET name='Concurrent rename' WHERE id=11");
+                        var result = service.updatePrice("11", new ProductPriceRequest("9007199254740993"));
+                        assertEquals("Concurrent rename", result.name());
+                        assertEquals("9007199254740993", result.sellingPrice());
+                    });
+                    var failure = assertThrows(BusinessException.class, () -> tx.executeWithoutResult(status -> {
+                        assertTrue(categories.findById(8L).orElseThrow().getActive());
+                        external.update("UPDATE category SET is_active=FALSE WHERE id=8");
+                        service.update("11", new ProductWriteRequest("IT", "Rejected", "8", null, null, null, "0"));
+                    }));
+                    assertEquals(ErrorCode.BUSINESS_CONFLICT, failure.code());
+                } finally {
+                    SecurityContextHolder.clearContext();
+                }
+            }
+            assertEquals("Concurrent rename", external.queryForObject("SELECT name FROM product WHERE id=11", String.class));
+            assertEquals("9007199254740993", external.queryForObject(
+                    "SELECT selling_price FROM product WHERE id=11", java.math.BigDecimal.class).toPlainString());
+            assertEquals(7L, external.queryForObject("SELECT category_id FROM product WHERE id=11", Long.class));
+        }
+    }
+
+    private static GenericWebApplicationContext application(DataSource source) {
+        var context = new GenericWebApplicationContext();
+        context.setServletContext(new MockServletContext());
+        context.registerBean(DataSource.class, () -> source);
+        new AnnotatedBeanDefinitionReader(context).register(Fixture.class);
+        context.refresh();
+        return context;
+    }
+
     private static Snapshot snapshot(JdbcTemplate jdbc) {
         return new Snapshot(jdbc.queryForList("SELECT * FROM category ORDER BY id"),
                 jdbc.queryForList("SELECT * FROM product ORDER BY id"));
@@ -132,7 +199,7 @@ class CategoryProductReferenceIT {
     @Configuration(proxyBeanMethods = false)
     @EnableWebMvc @EnableWebSecurity @EnableTransactionManagement(proxyTargetClass = true)
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
-            EmployeeUserDetailsService.class, CategoryController.class, CategoryService.class,
+            EmployeeUserDetailsService.class, CategoryController.class, CategoryService.class, ProductService.class,
             GlobalExceptionHandler.class, AuthorizationService.class, PermissionPolicy.class})
     static class Fixture {
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DataSource datasource) {
@@ -149,9 +216,16 @@ class CategoryProductReferenceIT {
             return new JpaTransactionManager(factory);
         }
 
-        @Bean JpaRepositoryFactory repositories(EntityManagerFactory factory) {
-            EntityManager entities = SharedEntityManagerCreator.createSharedEntityManager(factory);
+        @Bean EntityManager entities(EntityManagerFactory factory) {
+            return SharedEntityManagerCreator.createSharedEntityManager(factory);
+        }
+
+        @Bean JpaRepositoryFactory repositories(EntityManager entities) {
             return new JpaRepositoryFactory(entities);
+        }
+
+        @Bean ProductRepository products(JpaRepositoryFactory factory) {
+            return factory.getRepository(ProductRepository.class);
         }
 
         @Bean CategoryRepository categories(JpaRepositoryFactory factory) {
@@ -172,7 +246,7 @@ class CategoryProductReferenceIT {
                 assertEquals(MANAGER, auth.getName());
                 assertTrue(auth.getAuthorities().stream().anyMatch(role -> role.getAuthority().equals("ROLE_MANAGER")));
                 return new ResolvedAccess(new CurrentActor(1L, MANAGER), Set.of(EmployeeRole.MANAGER),
-                        Set.of("CATEGORY_DEACTIVATE"));
+                        Set.of("CATEGORY_DEACTIVATE", "PRODUCT_UPDATE", "PRODUCT_PRICE_UPDATE"));
             });
             return resolver;
         }

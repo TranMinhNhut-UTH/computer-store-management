@@ -49,7 +49,8 @@ class ProductServiceTest {
 
     ProductServiceTest() {
         var target = new ProductService(products, categories, new PermissionPolicy(new AuthorizationService(roles)),
-                new UtcTimeProvider(Clock.fixed(Instant.parse("2026-11-22T02:00:00Z"), ZoneOffset.UTC)));
+                new UtcTimeProvider(Clock.fixed(Instant.parse("2026-11-22T02:00:00Z"), ZoneOffset.UTC)),
+                mock(jakarta.persistence.EntityManager.class));
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         var txInterceptor = new TransactionInterceptor();

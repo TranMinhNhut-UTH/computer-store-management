@@ -284,6 +284,35 @@ class AuthenticationHttpTest {
         return new Token(actualSession, body.get("headerName").asText(), body.get("token").asText());
     }
 
+    @Test void oversizedPasswordUsesTheSameSafeHttpFailureAsAnUnknownAccount() throws Exception {
+        var encoder = new SecurityConfig().passwordEncoder();
+        var realProvider = new EmployeeAuthenticationProvider(new EmployeeUserDetailsService(users), encoder);
+        var account = users.findById(9007199254740993L).orElseThrow();
+        when(account.getId()).thenReturn(9007199254740993L);
+        var valid = "\u00e9".repeat(36);
+        when(account.getPasswordHash()).thenReturn(encoder.encode(valid));
+        when(users.findByUsername("employee")).thenReturn(Optional.of(account));
+        doAnswer(call -> realProvider.authenticate(call.getArgument(0))).when(provider).authenticate(any());
+
+        var session = login(csrf(null), json.writeValueAsString(java.util.Map.of("username", "employee", "password", valid)));
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+
+        String first = null;
+        for (String username : List.of("employee", "unknown")) {
+            var token = csrf(null);
+            var result = mvc.perform(post(AUTH + "/login").session(token.session()).header(token.header(), token.token())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(java.util.Map.of("username", username, "password", valid + "x"))))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
+                    .andExpect(jsonPath("$.username").doesNotExist()).andReturn();
+            var body = result.getResponse().getContentAsString();
+            if (first == null) first = body;
+            else assertEquals(first, body);
+            assertNull(token.session().getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY));
+        }
+    }
+
     private MockHttpSession login(Token token, String body) throws Exception {
         MvcResult result = mvc.perform(post(AUTH + "/login").session(token.session())
                 .header(token.header(), token.token()).contentType(MediaType.APPLICATION_JSON).content(body))

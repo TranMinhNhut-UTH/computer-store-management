@@ -19,7 +19,10 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static com.computerstore.computer_store_backend.identity.authorization.PermissionCode.*;
 import static com.computerstore.computer_store_backend.purchasing.entity.PurchaseStatus.DRAFT;
@@ -88,6 +91,23 @@ public class SupplierService {
         supplier.setActive(false);
         supplier.setUpdatedAt(time.now());
         return response(save(supplier));
+    }
+
+    /** Purchasing calls after authorization and before locking or writing its draft. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void requireActiveForPurchase(long supplierId, Long previousSupplierId) {
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            throw new IllegalTransactionStateException("Supplier selection requires a Purchasing write transaction.");
+        }
+        if (supplierId <= 0 || (previousSupplierId != null && previousSupplierId <= 0)) throw invalid();
+        if (previousSupplierId != null && previousSupplierId < supplierId) lockActiveState(previousSupplierId);
+        boolean active = lockActiveState(supplierId);
+        if (previousSupplierId != null && previousSupplierId > supplierId) lockActiveState(previousSupplierId);
+        if (!active) throw conflict("An inactive supplier cannot be selected for a purchase.");
+    }
+
+    private boolean lockActiveState(long id) {
+        return suppliers.lockActiveState(id).orElseThrow(SupplierService::notFound) == 1;
     }
 
     private Supplier locked(String id) {

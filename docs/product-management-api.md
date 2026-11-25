@@ -15,6 +15,10 @@ The six routes below require an authenticated session and the listed server perm
 
 Invalid payloads or unsupported write fields return 400. Missing Product or Category returns 404. Duplicate SKU and inactive target Category return 409. Writes are transactional. Information changes lock the target Category before the Product to coordinate with Category deactivation. CSRF and session authentication remain in force. Physical locking under concurrent Product and Category writes has not been verified.
 
+Product writes refresh the locked row before changing it. Information updates cannot overwrite a price or active status committed since an earlier read in the same transaction. Reassignment also refreshes the locked target Category before checking activity.
+
+On create and price update, `sellingPrice` must be a JSON string in canonical whole VND, from `"0"` through `"9999999999999999999"` (`DECIMAL(19,0)`). Numeric tokens, fractional or exponent notation, and out-of-range values return a `sellingPrice` validation error. The server does not round or coerce prices.
+
 ## Approved Product permission rollout V1
 
 Approval applies to this five-code subset and these seven pairs. It does not change the meaning of the global catalog status or approve other slices.

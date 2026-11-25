@@ -15,6 +15,7 @@ import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
@@ -34,13 +35,15 @@ public class ProductService {
     private final CategoryRepository categories;
     private final PermissionPolicy permissions;
     private final UtcTimeProvider time;
+    private final EntityManager entities;
 
     public ProductService(ProductRepository products, CategoryRepository categories,
-            PermissionPolicy permissions, UtcTimeProvider time) {
+            PermissionPolicy permissions, UtcTimeProvider time, EntityManager entities) {
         this.products = products;
         this.categories = categories;
         this.permissions = permissions;
         this.time = time;
+        this.entities = entities;
     }
 
     public ProductPageResponse list(String query, Boolean active, String categoryId, int page, int size) {
@@ -117,13 +120,23 @@ public class ProductService {
     }
 
     private Category activeCategory(long id) {
+        discardCachedSnapshot(Category.class, id);
         var category = categories.findForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "The category was not found."));
         if (!Boolean.TRUE.equals(category.getActive())) throw conflict("The selected category is inactive.");
         return category;
     }
 
-    private Product locked(long id) { return products.findForUpdate(id).orElseThrow(ProductService::notFound); }
+    private Product locked(long id) {
+        discardCachedSnapshot(Product.class, id);
+        return products.findForUpdate(id).orElseThrow(ProductService::notFound);
+    }
+
+    private void discardCachedSnapshot(Class<?> type, long id) {
+        // A subsequent locking query must hydrate from the database, not reuse the managed instance.
+        // getReference also works for a missing row; the locking query determines whether it exists.
+        entities.detach(entities.getReference(type, id));
+    }
 
     private void rejectDuplicate(String sku, Long ownId) {
         if (products.findBySku(sku).filter(other -> !Objects.equals(other.getId(), ownId)).isPresent()) {
