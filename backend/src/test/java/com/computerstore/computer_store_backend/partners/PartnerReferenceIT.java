@@ -7,10 +7,12 @@ import com.computerstore.computer_store_backend.partners.service.CustomerService
 import com.computerstore.computer_store_backend.partners.service.SupplierService;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,6 +27,9 @@ class PartnerReferenceIT {
         assertNotNull(home, "Set csm.mysql.home to the Windows MySQL 8 installation");
         try (var mysql = DisposableMysql.start(Path.of(home), directory)) {
             var db = ReportsOverviewIT.initialize(mysql);
+            // This fixture boots the integrated ORM against a disposable V1 schema.
+            db.execute(new ClassPathResource("operations/session/v1/V12__add_employee_session_version.sql")
+                    .getContentAsString(StandardCharsets.UTF_8));
             db.update("""
                     INSERT INTO supplier (id, code, name, created_at, updated_at) VALUES
                     (1, 'OLD', 'Original supplier', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)),

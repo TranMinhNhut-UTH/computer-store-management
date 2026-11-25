@@ -15,19 +15,28 @@ public final class EmployeePrincipal implements UserDetails, CredentialsContaine
     private final Long userId;
     private final String username;
     private final boolean enabled;
+    private final Long sessionVersion;
     private transient String passwordHash;
 
-    EmployeePrincipal(Long userId, String username, String passwordHash, boolean enabled) {
+    EmployeePrincipal(Long userId, String username, String passwordHash, boolean enabled, long sessionVersion) {
         this.userId = Objects.requireNonNull(userId);
         this.username = Objects.requireNonNull(username);
         this.passwordHash = passwordHash;
         this.enabled = enabled;
+        this.sessionVersion = sessionVersion;
     }
 
     public Long getUserId() { return userId; }
     @Override public String getUsername() { return username; }
     @Override @JsonIgnore public String getPassword() { return passwordHash; }
     @Override public boolean isEnabled() { return enabled; }
+    @JsonIgnore public Long getSessionVersion() { return sessionVersion; }
+    public static boolean matchesAccount(EmployeePrincipal principal, String currentUsername,
+            Boolean active, long currentVersion) {
+        return principal.isEnabled() && Boolean.TRUE.equals(active) && currentUsername != null
+                && currentUsername.equals(principal.getUsername())
+                && Objects.equals(principal.getSessionVersion(), currentVersion);
+    }
     // V1 has only is_active: no independent lock/expiration columns exist.
     @Override public boolean isAccountNonLocked() { return true; }
     @Override public boolean isAccountNonExpired() { return true; }

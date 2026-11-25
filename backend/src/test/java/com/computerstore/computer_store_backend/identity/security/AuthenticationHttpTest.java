@@ -73,7 +73,9 @@ class AuthenticationHttpTest {
             if (!"employee".equals(username) || !" password with spaces ".equals(input.getCredentials())) {
                 throw new BadCredentialsException("Internal credentials LEAK");
             }
-            var principal = new EmployeePrincipal(9007199254740993L, "employee", "HASH_MUST_NOT_LEAK", true);
+            var current = users.findById(9007199254740993L).orElseThrow();
+            var principal = new EmployeePrincipal(9007199254740993L, "employee", "HASH_MUST_NOT_LEAK", true,
+                    current.getSessionVersion());
             return UsernamePasswordAuthenticationToken.authenticated(principal, input.getCredentials(), List.of());
         });
     }
@@ -131,6 +133,7 @@ class AuthenticationHttpTest {
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
 
         when(account.getActive()).thenReturn(false);
+        when(account.getSessionVersion()).thenReturn(1L);
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
                 .andExpect(jsonPath("$.username").doesNotExist());
@@ -138,9 +141,14 @@ class AuthenticationHttpTest {
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY));
 
         when(account.getActive()).thenReturn(true);
-        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
-        when(users.findById(9007199254740993L)).thenReturn(Optional.empty());
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized());
+        mvc.perform(post(AUTH + "/logout").session(session))
+                .andExpect(status().isUnauthorized());
+        var fresh = login(csrf(null), BODY);
+        mvc.perform(get(AUTH + "/me").session(fresh)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionVersion").doesNotExist());
+        when(users.findById(9007199254740993L)).thenReturn(Optional.empty());
+        mvc.perform(get(AUTH + "/me").session(fresh)).andExpect(status().isUnauthorized());
     }
 
     @Test void anonymousMeAndAnonymousLogoutWithValidCsrfReturn401() throws Exception {

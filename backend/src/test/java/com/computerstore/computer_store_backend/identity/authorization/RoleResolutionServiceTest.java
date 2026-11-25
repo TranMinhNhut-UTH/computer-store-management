@@ -25,8 +25,10 @@ class RoleResolutionServiceTest {
         when(actors.requireActor()).thenReturn(actor);
         when(entities.createQuery(RoleResolutionService.ROLES_QUERY, String.class)).thenReturn(roles);
         when(entities.createQuery(RoleResolutionService.PERMISSIONS_QUERY, String.class)).thenReturn(permissions);
+        when(roles.setParameter("sessionVersion", 0L)).thenReturn(roles);
         when(roles.setParameter("userId", 42L)).thenReturn(roles);
         when(roles.getResultList()).thenReturn(List.of("ADMIN"));
+        when(permissions.setParameter("sessionVersion", 0L)).thenReturn(permissions);
         when(permissions.setParameter("userId", 42L)).thenReturn(permissions);
         when(permissions.setParameter(eq("roleCodes"), any())).thenReturn(permissions);
         when(permissions.getResultList()).thenReturn(List.of());

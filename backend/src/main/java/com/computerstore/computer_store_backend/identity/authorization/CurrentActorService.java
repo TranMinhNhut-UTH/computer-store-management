@@ -27,12 +27,10 @@ public class CurrentActorService {
             throw unauthenticated();
         }
         var user = users.findById(principal.getUserId()).orElseThrow(CurrentActorService::unauthenticated);
-        // A stale enabled snapshot is not proof that the account is still active.
-        // Identity changes fail closed and require login again; no session is rewritten or revoked here.
-        if (!Boolean.TRUE.equals(user.getActive()) || !principal.getUsername().equals(user.getUsername())) {
+        if (!EmployeePrincipal.matchesAccount(principal, user.getUsername(), user.getActive(), user.getSessionVersion())) {
             throw unauthenticated();
         }
-        return new CurrentActor(principal.getUserId(), principal.getUsername());
+        return new CurrentActor(principal.getUserId(), principal.getUsername(), user.getSessionVersion());
     }
 
     private static BusinessException unauthenticated() {

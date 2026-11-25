@@ -37,6 +37,9 @@ public class AppUser extends AbstractEntity {
     @Column(name = "is_active", nullable = false, columnDefinition = "BOOLEAN")
     private Boolean active = true;
 
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion;
+
     @Column(name = "last_login_at", columnDefinition = "DATETIME(6)")
     private LocalDateTime lastLoginAt;
 
@@ -61,6 +64,8 @@ public class AppUser extends AbstractEntity {
     public void setPhone(String phone) { this.phone = phone; }
     public Boolean getActive() { return active; }
     public void setActive(Boolean active) { this.active = active; }
+    public long getSessionVersion() { return sessionVersion; }
+    public void revokeSessions() { sessionVersion = Math.incrementExact(sessionVersion); }
     public LocalDateTime getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

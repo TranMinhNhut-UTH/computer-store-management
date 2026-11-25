@@ -30,7 +30,9 @@ Cookie dùng Secure khi chạy HTTPS; SameSite, domain, path và ngoại lệ de
 
 **Lý do:** hỗ trợ logout/revocation trực tiếp và không cần thêm cơ chế JWT khi chưa có nhu cầu cụ thể. **Phạm vi:** identity, mọi API được bảo vệ và frontend.
 
-**PENDING:** phê duyệt session hay giải pháp khác; session idle/absolute timeout, concurrent sessions; deployment cùng/khác origin; cấu hình cookie Secure/SameSite/domain/path; CSRF token exchange và vòng đời token; allowlist CORS; cách vô hiệu phiên khi khóa/đổi quyền; quy trình bootstrap Admin một lần, ai thực hiện và cách cấp secret an toàn. Chưa chọn timeout hoặc cơ chế bootstrap cụ thể.
+**APPROVED — P01 V1:** Quyết định mới của người vận hành trong task “P01 Session Revocation V1”. Khóa tài khoản hoặc thay đổi tập vai trò làm mất hiệu lực mọi phiên trước đó sau khi transaction commit. Mở khóa không phục hồi phiên. Logout hủy phiên hiện tại và giữ CSRF. Nâng schema bằng V12 theo [runbook](session-revocation-rollout.md). Idle/absolute timeout, giới hạn phiên đồng thời và chính sách khi đổi mật khẩu vẫn cần quyết định riêng.
+
+**PENDING:** session idle/absolute timeout, concurrent sessions; deployment cùng/khác origin; cấu hình cookie Secure/SameSite/domain/path; CSRF token exchange và vòng đời token; allowlist CORS; quy trình bootstrap Admin một lần, ai thực hiện và cách cấp secret an toàn. Chưa chọn timeout hoặc cơ chế bootstrap cụ thể.
 
 ## B. Authorization
 
@@ -177,7 +179,7 @@ Inventory.version do Hibernate quản lý; Service không tự tăng. Cập nh�
 
 | Mã | PENDING | Cần chốt trước |
 |---|---|---|
-| P01 | Session, timeout, expiration/concurrent sessions và khóa tài khoản đang có phiên | Authentication implementation |
+| P01 | V1 được phê duyệt riêng: thu hồi tất cả phiên khi khóa hoặc đổi tập vai trò; mở khóa yêu cầu đăng nhập lại. Timeout và số phiên đồng thời còn PENDING. | IAM-003 / IAM-005 |
 | P02 | Cookie deployment, origin/HTTPS, CORS và CSRF exchange cụ thể | Frontend authentication integration |
 | P03 | Permission catalog, role mapping, cập nhật quyền trong phiên | API authorization |
 | P04 | Admin bootstrap an toàn và người thực hiện | Sử dụng hệ thống có phân quyền |

@@ -8,9 +8,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RoleResolutionService {
-    static final String ROLES_QUERY = "select distinct r.code from UserRole ur join ur.role r where ur.user.id = :userId";
+    static final String ROLES_QUERY = "select distinct r.code from UserRole ur join ur.role r "
+            + "where ur.user.id = :userId and ur.user.sessionVersion = :sessionVersion";
     static final String PERMISSIONS_QUERY = "select distinct p.code from UserRole ur, RolePermission rp "
-            + "join rp.permission p where ur.user.id = :userId and rp.role = ur.role and ur.role.code in :roleCodes";
+            + "join rp.permission p where ur.user.id = :userId and ur.user.sessionVersion = :sessionVersion "
+            + "and rp.role = ur.role and ur.role.code in :roleCodes";
     private final CurrentActorService actors;
     private final EntityManager entities;
 
@@ -22,8 +24,10 @@ public class RoleResolutionService {
     @Transactional(readOnly = true)
     public ResolvedAccess resolveCurrent() {
         var actor = actors.requireActor();
+        // A concurrent role update in READ COMMITTED cannot grant permissions to a stale snapshot.
         var codes = entities.createQuery(ROLES_QUERY, String.class)
-                .setParameter("userId", actor.userId()).getResultList();
+                .setParameter("userId", actor.userId())
+                .setParameter("sessionVersion", actor.sessionVersion()).getResultList();
         Set<EmployeeRole> roles = new HashSet<>();
         for (String code : codes) {
             if (code == null) continue;
@@ -33,6 +37,7 @@ public class RoleResolutionService {
         if (roles.isEmpty()) return new ResolvedAccess(actor, roles, Set.of());
         var mapped = entities.createQuery(PERMISSIONS_QUERY, String.class)
                 .setParameter("userId", actor.userId())
+                .setParameter("sessionVersion", actor.sessionVersion())
                 .setParameter("roleCodes", roles.stream().map(Enum::name).toList()).getResultList();
         Set<String> permissions = new HashSet<>();
         for (String code : mapped) {

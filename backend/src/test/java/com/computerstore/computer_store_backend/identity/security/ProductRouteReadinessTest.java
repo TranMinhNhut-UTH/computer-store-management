@@ -56,7 +56,7 @@ class ProductRouteReadinessTest {
             """;
     private static final String CREATE = "{\"information\":" + INFO + ",\"sellingPrice\":\"100\"}";
     private static final String PRICE = "{\"sellingPrice\":\"200\"}";
-    private static final EmployeePrincipal PRINCIPAL = new EmployeePrincipal(42L, "fixture", null, true);
+    private static final EmployeePrincipal PRINCIPAL = new EmployeePrincipal(42L, "fixture", null, true, 0L);
 
     @Autowired WebApplicationContext context;
     @Autowired AppUserRepository users;
@@ -182,12 +182,13 @@ class ProductRouteReadinessTest {
                 .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains("PRODUCT_UPDATE")));
     }
 
-    @Test void missingAndInvalidCsrfDenyEveryMutationBeforeActorOrPersistence() throws Exception {
+    @Test void missingAndInvalidCsrfDenyEveryMutationBeforeRoleResolutionOrPersistence() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL))).andExpect(status().isForbidden());
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL)).with(csrf().useInvalidToken()))
                 .andExpect(status().isForbidden());
-        verifyNoInteractions(users, entities, products, categories);
+        verify(users, times(8)).findById(42L); // Session version is checked before CSRF.
+        verifyNoInteractions(entities, products, categories);
     }
 
     @Test void releaseDoesNotOpenUnlistedRoutes() throws Exception {
@@ -196,7 +197,7 @@ class ProductRouteReadinessTest {
                 get(BASE + "/1/price"), get("/api/v1/inventory"), get("/api/v1/purchases"))) {
             mvc.perform(request.with(user(PRINCIPAL)).with(csrf())).andExpect(status().isForbidden());
         }
-        verifyNoInteractions(users, entities, products, categories);
+        verifyNoInteractions(entities, products, categories);
     }
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity

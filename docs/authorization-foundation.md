@@ -37,7 +37,7 @@ Long performedBy = actor.userId();
 
 `requiredPermissionFromApprovedServerPolicy` phải do code/config policy server đã được duyệt quyết định, không nhận từ request. Dữ liệu nghiệp vụ có thể nhận ID quan hệ, nhưng createdBy/confirmedBy/recordedBy phải lấy từ actor đã kiểm tra. `requireActor()` chỉ xác nhận danh tính/active, không thay authorization. Không tự chọn một role hoặc permission cho thao tác nghiệp vụ từ ví dụ này.
 
-## API/session policy giữ nguyên
+## API/session policy tại checkpoint Part 3A (lịch sử)
 
 Public: GET /api/health, GET /api/v1/auth/csrf, POST /api/v1/auth/login (vẫn yêu cầu CSRF). GET /api/v1/auth/me yêu cầu authenticated; POST /api/v1/auth/logout yêu cầu authenticated + CSRF. Các endpoint nghiệp vụ vẫn denyAll, kể cả khi một guard primitive có thể đạt. Không thêm method-security/endpoint mapping, JWT, CORS wildcard hoặc đổi cookie/session production policy.
 
@@ -97,4 +97,12 @@ The approved FR-AUTH-01/02/04 boundary requires a valid employee account for pro
 
 If a protected request made by the current signed-in SPA session returns `401`, the app clears the workspace and shows the sign-in form on the same URL. The previous request is never replayed. Sign-in still fetches a fresh CSRF token and uses `/me` to confirm identity. A `403` or network error stays in the current view. Late responses from an older session or an aborted request cannot close the current session.
 
-The server retains the existing session on a rejected request. Unlock can make a still-valid cookie usable again, and effective grants are still recalculated on every guarded request. P01 remains open for session invalidation, timeout and concurrency policy. Staff account editing remains ADMIN-only. Self-service profile and password changes have no approved V1 contract and are outside this release.
+## P01 V1 employee session revocation
+
+The operator explicitly approved this behavior in the P01 implementation brief. On a successful Staff lock or an actual role-set change, the same database transaction advances the employee's `session_version`. Unlock, ordinary employee edits and unchanged role assignments leave the version unchanged. Failed or rolled-back writes leave sessions at their prior version.
+
+Login binds the current version to the detached servlet-session principal. An employee session with an absent or different version, an inactive account, or a missing account receives `401 UNAUTHENTICATED` on protected requests, including `/me` and mutations. The HTTP check runs before CSRF for revoked sessions. A current session still needs CSRF for writes and returns `403` for insufficient grants. The service checks the actor again and constrains role and permission queries to that version, so a stale request cannot use newly granted roles. Existing logout invalidates the current servlet session. The SPA preserves the route, returns to sign-in on a protected `401`, and never replays a rejected mutation.
+
+Revocation takes effect when the Staff transaction commits. Requests that have already passed the relevant authorization checks can finish using the authorization they obtained. Revocation does not cancel running transactions, replace servlet session storage, or set new idle/absolute timeouts or concurrent-session limits. Sessions issued without a version require fresh login.
+
+V12 is an explicit, separately deployed schema prerequisite. All backend instances must read the committed version from the same primary database, even if they keep separate servlet session stores. Follow the [P01 rollout runbook](session-revocation-rollout.md).
