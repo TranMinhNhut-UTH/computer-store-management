@@ -1,9 +1,15 @@
 package com.computerstore.computer_store_backend.identity.security;
 
 import com.computerstore.computer_store_backend.HealthController;
+import com.computerstore.computer_store_backend.identity.authorization.CurrentActor;
+import com.computerstore.computer_store_backend.identity.authorization.EmployeeRole;
+import com.computerstore.computer_store_backend.identity.authorization.ResolvedAccess;
+import com.computerstore.computer_store_backend.identity.authorization.RoleResolutionService;
+import com.computerstore.computer_store_backend.identity.controller.UiCapabilitiesController;
 import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +41,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -49,6 +56,39 @@ class SecurityConfigTest {
 
     @BeforeEach void setup() {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
+
+    @Test void uiCapabilitiesProjectsOnlyCurrentCatalogGrants() throws Exception {
+        var roles = context.getBean(RoleResolutionService.class);
+        reset(roles);
+        String path = "/api/v1/auth/ui-capabilities";
+        mvc.perform(get(path)).andExpect(status().isUnauthorized());
+        verifyNoInteractions(roles);
+
+        var actor = new CurrentActor(1L, "fixture");
+        when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(actor, Set.of(EmployeeRole.ADMIN), Set.of()));
+        mvc.perform(get(path).with(user("fixture").roles("ADMIN")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.permissions").isEmpty());
+
+        when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(actor, Set.of(EmployeeRole.SALES_STAFF),
+                Set.of("CATEGORY_READ", "CUSTOMER_READ", "PERMISSION_READ", "SALE_CONFIRM", "SUPPLIER_UPDATE")));
+        mvc.perform(get(path).with(user("fixture")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions").value(contains("CATEGORY_READ", "CUSTOMER_READ")));
+        mvc.perform(post(path).with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
+    }
+
+    @Test void staffRoutesAndCapabilityAreClosedByDefault() throws Exception {
+        var roles = context.getBean(RoleResolutionService.class);
+        reset(roles);
+        when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(
+                new CurrentActor(1L, "fixture"), Set.of(EmployeeRole.ADMIN), Set.of("EMPLOYEE_READ")));
+        mvc.perform(get("/api/v1/auth/ui-capabilities").with(user("fixture")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.permissions").isEmpty());
+        mvc.perform(get("/api/v1/employees").with(user("fixture").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/employees/1/unlock").with(user("fixture").roles("ADMIN")).with(csrf()))
+                .andExpect(status().isForbidden());
     }
 
     @Test void healthIsPublicAndDoesNotCreateSession() throws Exception {
@@ -169,8 +209,9 @@ class SecurityConfigTest {
     @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
             EmployeeUserDetailsService.class, HealthController.class, PrivateFixture.class,
-            UserDetailsServiceAutoConfiguration.class})
+            UserDetailsServiceAutoConfiguration.class, UiCapabilitiesController.class})
     static class FixtureConfig {
+        @Bean RoleResolutionService roles() { return mock(RoleResolutionService.class); }
         @Bean AppUserRepository appUserRepository() {
             return org.mockito.Mockito.mock(AppUserRepository.class);
         }

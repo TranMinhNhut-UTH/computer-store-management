@@ -1,3 +1,4 @@
+import { createApiTransport, observeSessionRejection } from './client.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ApiError, createAuthClient } from './auth.js'
@@ -68,4 +69,32 @@ test('network errors are sanitized and aborted requests remain abortable', async
   await assert.rejects(failed.refreshCsrf(), error => error.status === 0 && !error.message.includes('sensitive'))
   const aborted = createAuthClient(async () => { throw new DOMException('Cancelled', 'AbortError') })
   await assert.rejects(aborted.refreshCsrf(), error => error.name === 'AbortError')
+})
+
+test('a delayed or aborted 401 cannot reject a newer session', async () => {
+  const requests = []
+  const request = createApiTransport(() => new Promise(resolve => requests.push(resolve)))
+  const denied = () => Response.json({ code: 'UNAUTHENTICATED' }, { status: 401 })
+  let rejected = 0
+  const old = observeSessionRejection(() => { throw new Error('Old session must not be notified') })
+  const stale = request('/api/v1/categories')
+  const stop = observeSessionRejection(() => { rejected++ })
+  try {
+    old()
+    requests.shift()(denied())
+    await assert.rejects(stale, { status: 401 })
+    assert.equal(rejected, 0)
+
+    const abort = new AbortController()
+    const abandoned = request('/api/v1/categories', { signal: abort.signal })
+    abort.abort()
+    requests.shift()(denied())
+    await assert.rejects(abandoned, { status: 401 })
+    assert.equal(rejected, 0)
+
+    const current = request('/api/v1/categories')
+    requests.shift()(denied())
+    await assert.rejects(current, { status: 401 })
+    assert.equal(rejected, 1)
+  } finally { stop() }
 })

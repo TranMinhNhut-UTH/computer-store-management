@@ -1,11 +1,11 @@
 package com.computerstore.computer_store_backend.identity.controller;
 
+import com.computerstore.computer_store_backend.identity.authorization.CurrentActorService;
 import com.computerstore.computer_store_backend.identity.dto.request.LoginRequest;
 import com.computerstore.computer_store_backend.identity.dto.response.CurrentUserResponse;
 import com.computerstore.computer_store_backend.identity.dto.response.CsrfTokenResponse;
 import com.computerstore.computer_store_backend.identity.security.ApiAuthenticationEntryPoint;
 import com.computerstore.computer_store_backend.identity.security.AuthenticationSessionService;
-import com.computerstore.computer_store_backend.identity.security.EmployeePrincipal;
 import com.computerstore.computer_store_backend.shared.error.ApiProblems;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,9 +32,13 @@ public class AuthenticationController {
     private final AuthenticationSessionService sessions;
     private final ApiAuthenticationEntryPoint entryPoint;
 
-    public AuthenticationController(AuthenticationSessionService sessions, ApiAuthenticationEntryPoint entryPoint) {
+    private final CurrentActorService actors;
+
+    public AuthenticationController(AuthenticationSessionService sessions, ApiAuthenticationEntryPoint entryPoint,
+            CurrentActorService actors) {
         this.sessions = sessions;
         this.entryPoint = entryPoint;
+        this.actors = actors;
     }
 
     @GetMapping("/csrf")
@@ -50,8 +54,9 @@ public class AuthenticationController {
     }
 
     @GetMapping("/me")
-    public CurrentUserResponse me(Authentication authentication) {
-        return CurrentUserResponse.from((EmployeePrincipal) authentication.getPrincipal());
+    public CurrentUserResponse me() {
+        var actor = actors.requireActor();
+        return new CurrentUserResponse(actor.userId().toString(), actor.username());
     }
 
     @PostMapping("/logout")

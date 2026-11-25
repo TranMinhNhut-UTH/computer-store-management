@@ -1,0 +1,14 @@
+.product-page { min-width: 0; }
+.product-table-scroll { overflow-x: auto; border: 1px solid var(--csm-border); border-radius: var(--csm-radius-control); }
+.product-table-scroll:focus-visible { outline: 3px solid var(--csm-focus); outline-offset: 3px; }
+.product-table { width: 100%; min-width: 860px; border-collapse: collapse; background: var(--csm-table-bg); font-size: var(--csm-font-sm); text-align: left; }
+.product-table :is(th, td) { max-width: 230px; padding: var(--csm-space-3); vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--csm-border); }
+.product-table thead, .product-table tbody tr:hover { background: var(--csm-table-hover); }
+.product-table time { white-space: nowrap; }
+.product-actions { display: flex; flex-wrap: wrap; align-items: start; gap: var(--csm-space-2); }
+.product-table .product-actions > button { min-height: 36px; padding: 4px 12px; border-radius: 8px; white-space: nowrap; }
+.product-danger.csm-button:not(:disabled) { color: var(--csm-error); border-color: color-mix(in srgb, var(--csm-error) 68%, var(--csm-surface)); }
+.product-danger.csm-button:not(:disabled):hover { background: var(--csm-error-soft); }
+.product-detail { display: grid; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); gap: var(--csm-space-2); }
+.product-detail dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.product-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

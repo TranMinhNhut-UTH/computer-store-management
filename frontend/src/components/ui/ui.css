@@ -25,3 +25,5 @@
 .csm-empty p { max-width: 440px; margin: 0; font-size: var(--csm-font-sm); }
 .csm-loading { display: flex; align-items: center; gap: var(--csm-space-3); color: var(--csm-muted); padding: var(--csm-space-4); }
 @media (max-width: 600px) { .csm-page-header { flex-direction: column; } .csm-card { padding: var(--csm-space-4); } }
+.csm-list-error { padding-block: var(--csm-space-4); }
+.csm-list-error > p { margin: 0 0 var(--csm-space-2); line-height: 1.7; color: var(--csm-error); }

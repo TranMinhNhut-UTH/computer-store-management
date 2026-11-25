@@ -67,6 +67,25 @@ class PermissionPolicyMappingTest {
 
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
+    @Test void sameAuthenticationUsesCurrentAccountAndGrants() throws Exception {
+        var context = SecurityContextHolder.getContext();
+        var original = context.getAuthentication();
+        mvc.perform(get("/fixture/policy/product")).andExpect(status().isOk());
+
+        when(user.getActive()).thenReturn(false);
+        mvc.perform(get("/fixture/policy/product")).andExpect(status().isUnauthorized());
+        assertSame(original, context.getAuthentication());
+
+        when(user.getActive()).thenReturn(true);
+        mvc.perform(get("/fixture/policy/product")).andExpect(status().isOk());
+        when(roles.getResultList()).thenReturn(List.of("SALES_STAFF"));
+        when(permissions.getResultList()).thenReturn(List.of("CUSTOMER_READ"));
+        mvc.perform(get("/fixture/policy/product")).andExpect(status().isForbidden());
+        when(permissions.getResultList()).thenReturn(List.of("PRODUCT_READ"));
+        mvc.perform(get("/fixture/policy/product")).andExpect(status().isOk());
+        assertSame(original, context.getAuthentication());
+    }
+
     @Test void eligibleAccessUsesTheServerActorAndExistingScalarMappingQueries() {
         assertEquals(new CurrentActor(42L, "employee"), policy.requirePermission(PermissionCode.PRODUCT_READ.code()));
         verify(users).findById(42L);

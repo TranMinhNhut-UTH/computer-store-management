@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, authClient } from './api/auth.js'
+import { observeSessionRejection } from './api/client.js'
 import { ThemeToggle } from './theme/ThemeToggle.jsx'
 import { AppLayout } from './app/AppLayout.jsx'
 import { LoadingState } from './components/ui/LoadingState.jsx'
@@ -30,6 +31,29 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const operationInFlight = useRef(false)
+  const stopObservingSession = useRef(null)
+  const focusAfterRejection = useRef(false)
+  const loginName = useRef(null)
+
+  function replaceSession(currentUser) {
+    stopObservingSession.current?.()
+    stopObservingSession.current = currentUser ? observeSessionRejection(() => {
+      focusAfterRejection.current = true
+      replaceSession(null)
+      setPassword('')
+      setShowPassword(false)
+      setNotice('')
+      setError(errorMessage(new ApiError(401), 'session'))
+    }) : null
+    setUser(currentUser)
+  }
+
+  useEffect(() => {
+    if (!user && focusAfterRejection.current && !busy) {
+      focusAfterRejection.current = false
+      loginName.current?.focus()
+    }
+  }, [user, busy])
 
   async function loadSession(signal) {
     setBusy('checking')
@@ -38,7 +62,7 @@ export default function App() {
       const current = await authClient.getCurrentUser({ signal })
       await authClient.refreshCsrf({ signal })
       if (signal?.aborted) return
-      setUser(current)
+      replaceSession(current)
       setInitialized(true)
     } catch (failure) {
       if (signal?.aborted) return
@@ -52,7 +76,10 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController()
     loadSession(controller.signal)
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      stopObservingSession.current?.()
+    }
   }, [])
 
   async function handleLogin(event) {
@@ -69,13 +96,13 @@ export default function App() {
       await authClient.login(credentials)
       const current = await authClient.getCurrentUser()
       if (!current) throw new ApiError(401)
-      setUser(current)
-      setNotice('Đăng nhập thành công.')
       try { await authClient.refreshCsrf() } catch {
         setError('Đã đăng nhập nhưng chưa thể làm mới phiên bảo mật. Vui lòng thử lại trước khi tiếp tục.')
       }
+      replaceSession(current)
+      setNotice('Đăng nhập thành công.')
     } catch (failure) {
-      setUser(null)
+      replaceSession(null)
       setError(errorMessage(failure, 'login'))
     } finally {
       credentials.password = ''
@@ -92,7 +119,7 @@ export default function App() {
     setNotice('')
     try {
       await authClient.logout()
-      setUser(null)
+      replaceSession(null)
       setPassword('')
       setNotice('Bạn đã đăng xuất.')
       try { await authClient.refreshCsrf() } catch {
@@ -100,7 +127,7 @@ export default function App() {
         setError('Đã đăng xuất. Chưa thể kết nối lại để chuẩn bị phiên đăng nhập mới.')
       }
     } catch (failure) {
-      if (failure instanceof ApiError && failure.status === 401) setUser(null)
+      if (failure instanceof ApiError && failure.status === 401) replaceSession(null)
       setError(errorMessage(failure, 'logout'))
     } finally {
       operationInFlight.current = false
@@ -137,7 +164,7 @@ export default function App() {
               <fieldset disabled={Boolean(busy) || !initialized}>
                 <div className="field-group">
                   <label htmlFor="username">Tên đăng nhập</label>
-                  <input id="username" name="username" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={username} onChange={event => setUsername(event.target.value)} placeholder="Nhập tên đăng nhập" />
+                  <input ref={loginName} id="username" name="username" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={username} onChange={event => setUsername(event.target.value)} placeholder="Nhập tên đăng nhập" />
                 </div>
                 <div className="field-group">
                   <label htmlFor="password">Mật khẩu</label>

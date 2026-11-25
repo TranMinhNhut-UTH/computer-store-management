@@ -12,7 +12,6 @@
 .csm-nav-group a[aria-current=page] { background: var(--csm-primary-soft); color: var(--csm-text); border-color: var(--csm-primary); }
 .csm-nav-label { font-size: var(--csm-font-sm); font-weight: 600; }
 .csm-nav-icon { flex-shrink: 0; }
-.csm-nav-note { margin: var(--csm-space-4) var(--csm-space-3); font-size: var(--csm-font-xs); line-height: 1.6; color: var(--csm-muted); }
 .csm-shell--collapsed .csm-desktop-sidebar { padding-inline: var(--csm-space-1); }
 .csm-shell--collapsed .csm-sidebar-brand { justify-content: center; padding-inline: 0; }
 .csm-shell--collapsed .brand-mark { width: var(--csm-space-10); height: var(--csm-space-10); font-size: var(--csm-font-xs); }

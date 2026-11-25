@@ -8,9 +8,29 @@ export class ApiError extends Error {
   }
 }
 
+export function validateListPage(data, requestedPage, requestedSize) {
+  if (!Array.isArray(data?.items)
+      || !['page', 'size', 'totalElements', 'totalPages'].every(field => Number.isSafeInteger(data[field]) && data[field] >= 0)
+      || data.size < 1 || data.size > 100 || data.items.length > data.size
+      || data.page !== Number(requestedPage) || data.size !== Number(requestedSize)
+      || data.page * data.size > 2_147_483_647) {
+    throw new ApiError(502)
+  }
+}
+
+let activeSession = null
+
+// Requests remember the session that was current when they were sent.
+export function observeSessionRejection(onRejected) {
+  const session = { onRejected }
+  activeSession = session
+  return () => { if (activeSession === session) activeSession = null }
+}
+
 // Shared transport: browser-managed cookies, no secrets in storage or raw server details in errors.
-export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis)) {
+export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalThis), acceptedFields = ['code', 'name', 'description'], { recoverSession = true } = {}) {
   return async function request(path, options = {}) {
+    const session = recoverSession ? activeSession : null
     let response
     try {
       response = await fetchRequest(path, {
@@ -23,8 +43,11 @@ export function createApiTransport(fetchRequest = globalThis.fetch.bind(globalTh
     }
     if (!response.ok) {
       const problem = await response.json().catch(() => null)
+      if (response.status === 401 && session && session === activeSession && !options.signal?.aborted) {
+        session.onRejected()
+      }
       const fields = Array.isArray(problem?.fieldErrors)
-        ? problem.fieldErrors.map(item => item?.field).filter(field => ['code', 'name', 'description'].includes(field)) : []
+        ? problem.fieldErrors.map(item => item?.field).filter(field => acceptedFields.includes(field)) : []
       throw new ApiError(response.status, typeof problem?.code === 'string' ? problem.code : '', fields)
     }
     if (response.status === 204) return null

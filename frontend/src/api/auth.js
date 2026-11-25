@@ -4,7 +4,7 @@ const BASE_URL = '/api/v1/auth'
 
 // Cookies stay browser-managed; CSRF tokens exist only in request scope, never browser storage.
 export function createAuthClient(fetchRequest = globalThis.fetch.bind(globalThis)) {
-  const transport = createApiTransport(fetchRequest)
+  const transport = createApiTransport(fetchRequest, undefined, { recoverSession: false })
   const request = (path, options) => transport(`${BASE_URL}${path}`, options)
 
   function currentUser(payload) {

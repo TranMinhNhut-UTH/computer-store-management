@@ -1,0 +1,6 @@
+diff --git a/backend/config/staff-local.properties b/backend/config/staff-local.properties
+new file mode 100644
+--- /dev/null
++++ b/backend/config/staff-local.properties
+@@ -0,0 +1 @@
++csm.staff-management.enabled=true

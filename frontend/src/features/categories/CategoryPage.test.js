@@ -43,7 +43,9 @@ after(async () => {
   assert.ok(basename(cacheDir).startsWith('csm-category-test-'))
   await rm(cacheDir, { recursive: true, force: true })
 })
-async function render() { await act(async () => { root.render(createElement(CategoryPage, { client })); await wait() }) }
+async function render(permissions = ['CATEGORY_CREATE', 'CATEGORY_UPDATE', 'CATEGORY_DEACTIVATE']) {
+  await act(async () => { root.render(createElement(CategoryPage, { client, permissions })); await wait() })
+}
 async function click(element) { assert.ok(element); await act(async () => { element.click(); await wait() }) }
 async function submit() { await act(async () => { container.querySelector('dialog form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); await wait() }) }
 async function change(element, value) {
@@ -165,7 +167,8 @@ for (const [status, message] of [[400, 'Dữ liệu chưa hợp lệ'], [401, 'P
   assert.ok(container.querySelector('[role=alert]').textContent.includes(message))
   assert.equal(container.textContent.includes('PRIVATE_SENTINEL'), false)
   assert.equal(container.querySelector('table'), null)
-  assert.equal(button('Tạo danh mục').disabled, true)
+  assert.equal(button('Tạo danh mục'), undefined)
+  assert.equal(Boolean(button('Thử lại')), status !== 401 && status !== 403)
 })
 test('create dialog has labels, initial focus, exact DTO and reloads only after successful save', async () => {
   await render(); const opener = button('Tạo danh mục'); opener.focus(); await click(opener)
@@ -282,4 +285,19 @@ test('successful save keeps the focused opener available throughout a pending li
     await act(async () => { finishRefresh(page); await wait() })
   }
   assert.ok(document.activeElement === opener, 'Focus must remain on the opener after refresh')
+})
+
+test('Category read-only users open fresh details without write actions', async () => {
+  client.detail = async () => ({ ...record, name: 'Chi tiết từ máy chủ' })
+  await render([])
+  assert.equal(button('Tạo danh mục'), undefined)
+  assert.equal(container.querySelector('button[aria-label="Sửa danh mục CPU"]'), null)
+  assert.equal(container.querySelector('button[aria-label="Ngừng sử dụng danh mục CPU"]'), null)
+  const opener = container.querySelector('button[aria-label="Xem danh mục CPU"]')
+  opener.focus()
+  await click(opener)
+  assert.match(container.querySelector('dialog').textContent, /Chi tiết từ máy chủ/)
+  assert.equal(container.querySelector('dialog form'), null)
+  await click(button('Đóng chi tiết'))
+  assert.equal(document.activeElement, opener)
 })

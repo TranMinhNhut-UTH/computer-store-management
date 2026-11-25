@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
-let server, dom, App, ThemeProvider, root, container, authenticated, requests
+let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -36,8 +36,22 @@ before(async () => {
     requests.push({ url, options })
     if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
     if (url.endsWith('/me')) return Response.json(authenticated ? { userId: '42', username: 'test-employee' } : { code: 'UNAUTHENTICATED' }, { status: authenticated ? 200 : 401 })
+    if (url.endsWith('/login')) {
+      if (!loginAccepted) return Response.json({ code: 'UNAUTHENTICATED' }, { status: 401 })
+      authenticated = true
+      return Response.json({ userId: '42', username: 'test-employee' })
+    }
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
-    if (url.startsWith('/api/v1/categories')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
+    if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    if (url.endsWith('/reports/overview')) return reportResponse()
+    if (url.startsWith('/api/v1/employees')) {
+      return capabilities.includes('EMPLOYEE_READ')
+        ? Response.json({ items: [], page: 0, size: 20, totalPages: 0, totalElements: 0, allowedActions: [] })
+        : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+    }
+    if (url.startsWith('/api/v1/categories')) return Response.json({ code: categoryStatus === 401 ? 'UNAUTHENTICATED' : 'ACCESS_DENIED' }, { status: categoryStatus })
+    if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
@@ -50,6 +64,11 @@ beforeEach(() => {
   requests = []
   window.history.replaceState(null, '', '/')
   authenticated = false
+  categoryStatus = 403
+  loginAccepted = true
+  reportAccess = false
+  capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
+  reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   viewportWidth = 1440
   mediaQueries.clear()
   localStorage.clear()
@@ -119,19 +138,62 @@ test('Category links update the URL and browser Back and Forward restore the sel
   assert.ok(container.querySelector('.category-page'))
 })
 
-test('me-confirmed user sees shell and navigation changes only coming-soon content', async () => {
-  authenticated = true
+test('direct Product navigation keeps the session gate and renders the denied state without sample data', async () => {
+  window.history.replaceState(null, '', '/products')
   await render()
-  assert.ok(container.querySelector('[data-app-shell]'))
+  assert.ok(container.querySelector('#username'))
+  assert.equal(requests.some(request => request.url.startsWith('/api/v1/products')), false)
+  authenticated = true
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  await render()
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý sản phẩm')
+  assert.match(container.querySelector('.product-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(container.querySelector('.product-page table'), null)
+})
+
+test('the authenticated shell navigates between Category, Product, Supplier and Customer', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/products')
+  await render()
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý sản phẩm')
+  await click(container.querySelector('aside [data-nav-id="suppliers"]'))
+  assert.equal(window.location.pathname, '/suppliers')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý nhà cung cấp')
+  assert.match(container.querySelector('#supplier-page [role=alert]').textContent, /không có quyền/)
+  await click(container.querySelector('aside [data-nav-id="customers"]'))
+  assert.equal(window.location.pathname, '/customers')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý khách hàng')
+  assert.match(container.querySelector('#customer-page [role=alert]').textContent, /không có quyền/)
+  await click(container.querySelector('aside [data-nav-id="categories"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý danh mục')
+  for (const module of ['products', 'suppliers', 'customers', 'categories']) {
+    assert.equal(requests.filter(request => request.url.startsWith('/api/v1/' + module)).length, 1)
+  }
+  assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 1)
+})
+
+test('sidebar uses server read grants and unfinished modules are absent from navigation', async () => {
+  authenticated = true
+  capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'CATEGORY_UPDATE']
+  window.history.replaceState(null, '', '/inventory')
+  await render()
   assert.ok(container.querySelector('.csm-username').textContent.includes('test-employee'))
-  assert.equal(container.querySelector('#password'), null)
-  await click(container.querySelector('aside [data-nav-id="inventory"]'))
-  assert.equal(container.querySelector('#page-title').textContent, '\u004bho h\u00e0ng')
-  assert.equal(container.querySelector('aside [aria-current="page"]').dataset.navId, 'inventory')
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'categories', 'products'])
+  assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
   assert.match(container.querySelector('.csm-empty').textContent, /Chưa|chưa/)
-  assert.ok(requests.every(request => request.url.includes('/auth/')))
-  assert.equal(container.textContent.includes('Admin'), false)
+  assert.ok(requests.every(request => request.url.includes('/auth/') || request.url.endsWith('/reports/access')))
+  assert.equal(container.querySelector('#password'), null)
   assert.equal(container.textContent.includes('test-token'), false)
+})
+
+test('signed-in account without read grants sees only overview even if an action is granted', async () => {
+  authenticated = true
+  capabilities = ['CATEGORY_UPDATE']
+  await render()
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview'])
+  assert.match(container.querySelector('main').textContent, /chưa có quyền/)
+  assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
 })
 
 test('theme toggles persist across shell navigation', async () => {
@@ -140,7 +202,7 @@ test('theme toggles persist across shell navigation', async () => {
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
-  await click(container.querySelector('aside [data-nav-id="reports"]'))
+  await click(container.querySelector('aside [data-nav-id="categories"]'))
   assert.equal(document.documentElement.dataset.theme, 'dark')
   await click(container.querySelector('.theme-toggle'))
   assert.equal(document.documentElement.dataset.theme, 'light')
@@ -196,16 +258,17 @@ test('drawer close button, backdrop and navigation close the drawer', async () =
   await click(dialog)
   assert.equal(dialog.open, false)
   await click(opener)
-  await click(dialog.querySelector('[data-nav-id="sales"]'))
+  await click(dialog.querySelector('[data-nav-id="suppliers"]'))
   assert.equal(dialog.open, false)
-  assert.equal(container.querySelector('#page-title').textContent, 'Bán hàng')
+  assert.equal(container.querySelector('#page-title').textContent, 'Quản lý nhà cung cấp')
   assert.equal(document.activeElement, container.querySelector('main'))
   await click(opener)
-  assert.equal(dialog.querySelector('[aria-current="page"]').dataset.navId, 'sales')
+  assert.equal(dialog.querySelector('[aria-current="page"]').dataset.navId, 'suppliers')
 })
 
 test('desktop hamburger collapses and expands one sidebar, preserves selection and never opens a drawer', async () => {
   authenticated = true
+  reportAccess = true
   await render()
   const shell = container.querySelector('[data-app-shell]')
   const toggle = container.querySelector('.csm-menu-toggle')
@@ -213,14 +276,14 @@ test('desktop hamburger collapses and expands one sidebar, preserves selection a
   assert.equal(toggle.getAttribute('aria-controls'), 'application-navigation')
   assert.equal(toggle.hasAttribute('aria-haspopup'), false)
   assert.equal(container.querySelector('dialog'), null)
-  await click(container.querySelector('[data-nav-id="inventory"]'))
+  await click(container.querySelector('[data-nav-id="products"]'))
   await click(toggle)
   assert.equal(shell.classList.contains('csm-shell--collapsed'), true)
   assert.equal(toggle.getAttribute('aria-label'), 'Mở rộng điều hướng')
   assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   assert.equal(container.querySelectorAll('nav').length, 1)
   assert.equal(container.querySelectorAll('.csm-nav-label').length, 0)
-  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'inventory')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'products')
   for (const button of container.querySelectorAll('[data-nav-id]')) {
     assert.ok(button.getAttribute('aria-label'))
     assert.equal(button.title, button.getAttribute('aria-label'))
@@ -228,8 +291,8 @@ test('desktop hamburger collapses and expands one sidebar, preserves selection a
   }
   await click(toggle)
   assert.equal(shell.classList.contains('csm-shell--collapsed'), false)
-  assert.equal(container.querySelectorAll('[data-nav-id]').length, 15)
-  assert.equal(container.querySelectorAll('.csm-nav-label').length, 15)
+  assert.equal(container.querySelectorAll('[data-nav-id]').length, 6)
+  assert.equal(container.querySelectorAll('.csm-nav-label').length, 6)
   assert.equal(container.querySelector('nav').textContent.includes('Chưa triển khai'), false)
   assert.equal(container.querySelector('dialog'), null)
   assert.equal(document.body.style.overflow, '')
@@ -284,25 +347,26 @@ test('resizing an open mobile drawer restores scrolling and focus without reopen
   document.body.style.overflow = ''
 })
 
-test('theme and selection survive sidebar toggles and mobile navigation without extra auth or business requests', async () => {
+test('theme and selection survive sidebar toggles and mobile navigation without reloading grants or refetching on resize', async () => {
   authenticated = true
   await render()
   const startupRequests = requests.length
   await click(container.querySelector('.theme-toggle'))
   await click(container.querySelector('.csm-menu-toggle'))
-  await click(container.querySelector('[data-nav-id="reports"]'))
+  await click(container.querySelector('[data-nav-id="customers"]'))
   await resizeViewport(900)
   assert.equal(document.documentElement.dataset.theme, 'dark')
-  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'reports')
+  assert.equal(container.querySelector('[aria-current="page"]').dataset.navId, 'customers')
   await resizeViewport(390)
   await click(container.querySelector('.csm-menu-toggle'))
-  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'reports')
-  await click(container.querySelector('dialog [data-nav-id="customers"]'))
-  assert.equal(container.querySelector('#page-title').textContent, 'Khách hàng')
+  assert.equal(container.querySelector('dialog [aria-current="page"]').dataset.navId, 'customers')
+  await click(container.querySelector('dialog [data-nav-id="overview"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Tổng quan')
   assert.equal(document.documentElement.dataset.theme, 'dark')
   assert.equal(localStorage.length, 1)
   assert.equal(localStorage.getItem('csm-theme'), 'dark')
-  assert.equal(requests.length, startupRequests)
+  assert.equal(requests.length, startupRequests + 1)
+  assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
 })
 
 test('logout keeps CSRF headers then returns to Login and refreshes token', async () => {
@@ -335,4 +399,98 @@ test('shared input connects label/error; loading button is disabled and cannot t
   await click(button)
   assert.equal(clicks, 0)
   assert.ok(container.querySelector('[role="status"]'))
+})
+
+test('reports remain hidden when the server denies access, even when opened directly', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/reports')
+  await render()
+  assert.equal(container.querySelector('[data-nav-id="reports"]'), null)
+  assert.match(container.querySelector('.reports-page [role=alert]').textContent, /không có quyền/)
+  assert.equal(container.querySelector('.reports-kpi'), null)
+})
+
+test('authorized reports show loading then SQL response totals and remain reachable at 375px', async () => {
+  authenticated = true
+  reportAccess = true
+  let complete
+  reportResponse = () => new Promise(resolve => { complete = resolve })
+  await render()
+  await click(container.querySelector('[data-nav-id="reports"]'))
+  assert.match(container.querySelector('.reports-page [role=status]').textContent, /Đang tải/)
+  const none = { total: 0, active: 0, inactive: 0 }
+  const products = { total: 3, active: 2, inactive: 1 }
+  await act(async () => complete(Response.json({
+    products, categories: { total: 1, active: 1, inactive: 0 }, suppliers: none, customers: none,
+    productsByCategory: [{ code: 'A', name: 'Fixture Category', products }],
+  })))
+  assert.deepEqual([...container.querySelectorAll('.reports-kpi strong')].map(node => node.textContent), ['3', '1', '0', '0'])
+  assert.match(container.querySelector('table').textContent, /Fixture Category/)
+  assert.match(container.querySelector('.reports-page').textContent, /đang chờ tích hợp/)
+  const request = requests.find(entry => entry.url.endsWith('/reports/overview'))
+  assert.equal(request.options.credentials, 'same-origin')
+  assert.equal(request.options.method, undefined)
+  await resizeViewport(375)
+  await click(container.querySelector('.csm-menu-toggle'))
+  assert.equal(container.querySelector('dialog [data-nav-id="reports"]').getAttribute('aria-current'), 'page')
+  assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
+})
+
+test('reports recover from a network error and distinguish an empty database', async () => {
+  authenticated = true
+  reportAccess = true
+  window.history.replaceState(null, '', '/reports')
+  reportResponse = () => { throw new Error('unavailable') }
+  await render()
+  assert.match(container.querySelector('.reports-page [role=alert]').textContent, /Không thể tải/)
+  const zero = { total: 0, active: 0, inactive: 0 }
+  reportResponse = () => Response.json({
+    products: zero, categories: zero, suppliers: zero, customers: zero, productsByCategory: [],
+  })
+  await click(container.querySelector('.reports-page button'))
+  assert.match(container.querySelector('.reports-page .csm-empty').textContent, /Chưa có danh mục/)
+  assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
+  assert.equal(container.querySelector('.reports-page table'), null)
+})
+
+test('staff navigation and deep links respect the server capability and API denial', async () => {
+  authenticated = true
+  capabilities = ['EMPLOYEE_READ']
+  await render()
+  await click(container.querySelector('[data-nav-id=employees]'))
+  assert.equal(window.location.pathname, '/employees')
+  assert.match(container.querySelector('main').textContent, /Không có tài khoản phù hợp/)
+  await act(async () => root.unmount())
+  root = createRoot(container)
+  capabilities = []
+  await render()
+  assert.equal(container.querySelector('[data-nav-id=employees]'), null)
+  assert.match(container.querySelector('.staff-page [role=alert]').textContent, /không có quyền/)
+})
+
+test('a protected 401 returns to sign-in and a fresh login resumes the same route without retrying the request', async () => {
+  authenticated = true
+  categoryStatus = 401
+  window.history.replaceState(null, '', '/categories')
+  await render()
+  assert.equal(container.querySelector('[data-app-shell]'), null)
+  assert.equal(window.location.pathname, '/categories')
+  assert.match(container.querySelector('#auth-error').textContent, /Phiên đăng nhập đã kết thúc/)
+  assert.equal(document.activeElement, container.querySelector('#username'))
+  assert.equal(requests.filter(entry => entry.url.startsWith('/api/v1/categories')).length, 1)
+  assert.equal(requests.filter(entry => entry.url.endsWith('/logout')).length, 0)
+
+  loginAccepted = false
+  const submit = () => act(async () => container.querySelector('form').dispatchEvent(
+    new window.Event('submit', { bubbles: true, cancelable: true })))
+  await submit()
+  assert.match(container.querySelector('#auth-error').textContent, /Không thể đăng nhập/)
+
+  loginAccepted = true
+  categoryStatus = 403
+  await submit()
+  assert.equal(window.location.pathname, '/categories')
+  assert.ok(container.querySelector('[data-app-shell]'))
+  assert.match(container.querySelector('.category-page [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(requests.filter(entry => entry.url.startsWith('/api/v1/categories')).length, 2)
 })
