@@ -56,7 +56,8 @@ class ProductRouteReadinessTest {
             """;
     private static final String CREATE = "{\"information\":" + INFO + ",\"sellingPrice\":\"100\"}";
     private static final String PRICE = "{\"sellingPrice\":\"200\"}";
-    private static final EmployeePrincipal PRINCIPAL = new EmployeePrincipal(42L, "fixture", null, true, 0L);
+    private static final EmployeePrincipal PRINCIPAL =
+            new EmployeePrincipal(42L, "fixture", null, true, 0L).forSession(java.time.Instant.now());
 
     @Autowired WebApplicationContext context;
     @Autowired AppUserRepository users;

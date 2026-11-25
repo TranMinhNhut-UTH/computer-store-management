@@ -47,11 +47,46 @@ class PasswordChangeIT {
             }
             fixture(db, "manager.fixture", "MANAGER");
             fixture(db, "sales.fixture", "SALES_STAFF");
+            fixture(db, "admin.fixture", "ADMIN");
+            for (String code : List.of("EMPLOYEE_LOCK", "EMPLOYEE_UNLOCK", "EMPLOYEE_ROLE_ASSIGN")) {
+                db.update("INSERT INTO permission (code,name,created_at,updated_at) VALUES (?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))",
+                        code, code);
+                db.update("""
+                        INSERT INTO role_permission (role_id,permission_id,created_at)
+                        SELECT r.id,p.id,UTC_TIMESTAMP(6) FROM app_role r,permission p
+                        WHERE r.code='ADMIN' AND p.code=?
+                        """, code);
+            }
             try (var app = runApp(mysql, 0)) {
                 int port = ((WebServerApplicationContext) app).getWebServer().getPort();
                 assertPasswordChanges(db, port);
+                assertStaffRevocation(port);
             }
         }
+    }
+
+    private static void assertStaffRevocation(int port) throws Exception {
+        String me = "/api/v1/auth/me";
+        var admin = new Session(port);
+        admin.login("admin.fixture");
+        var first = new Session(port);
+        var second = new Session(port);
+        String id = first.login("sales.fixture").get("userId").asString();
+        second.login("sales.fixture");
+
+        expect(200, admin.write("POST", STAFF + "/" + id + "/lock", null));
+        expect(401, first.read(me));
+        expect(200, admin.write("POST", STAFF + "/" + id + "/unlock", null));
+        expect(401, second.read(me));
+
+        var fresh = new Session(port);
+        fresh.login("sales.fixture");
+        expect(200, fresh.read(me));
+        expect(200, admin.write("PUT", STAFF + "/" + id + "/roles", Map.of("roles", List.of("WAREHOUSE_STAFF"))));
+        expect(401, fresh.read(me));
+        fresh.login("sales.fixture");
+        expect(200, fresh.read(me));
+        expect(200, admin.read(me));
     }
 
     private static void assertPasswordChanges(JdbcTemplate db, int port) throws Exception {

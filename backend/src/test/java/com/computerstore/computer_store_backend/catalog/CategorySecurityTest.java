@@ -69,8 +69,9 @@ class CategorySecurityTest {
         when(employee.getActive()).thenReturn(true);
         when(users.findByUsername("employee")).thenReturn(Optional.of(employee));
         when(users.findById(42L)).thenReturn(Optional.of(employee));
-        principal = new EmployeeUserDetailsService(users).loadUserByUsername("employee");
-        principal.eraseCredentials();
+        var verified = new EmployeeUserDetailsService(users).loadUserByUsername("employee");
+        principal = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                verified, "forSession", java.time.Instant.now());
         when(categories.search(isNull(), isNull(), any())).thenReturn(new PageImpl<>(List.of(CategoryTestData.category(7, true))));
         when(categories.findById(7L)).thenReturn(Optional.of(CategoryTestData.category(7, true)));
         when(categories.findForUpdate(7L)).thenAnswer(call -> Optional.of(CategoryTestData.category(7, true)));

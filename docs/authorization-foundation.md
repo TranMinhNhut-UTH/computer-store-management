@@ -103,7 +103,7 @@ The operator explicitly approved this behavior in the P01 implementation brief. 
 
 Login binds the current version to the detached servlet-session principal. An employee session with an absent or different version, an inactive account, or a missing account receives `401 UNAUTHENTICATED` on protected requests, including `/me` and mutations. The HTTP check runs before CSRF for revoked sessions. A current session still needs CSRF for writes and returns `403` for insufficient grants. The service checks the actor again and constrains role and permission queries to that version, so a stale request cannot use newly granted roles. Existing logout invalidates the current servlet session. The SPA preserves the route, returns to sign-in on a protected `401`, and never replays a rejected mutation.
 
-Revocation takes effect when the Staff transaction commits. Requests that have already passed the relevant authorization checks can finish using the authorization they obtained. Revocation does not cancel running transactions, replace servlet session storage, or set new idle/absolute timeouts or concurrent-session limits. Sessions issued without a version require fresh login.
+Revocation takes effect when the Staff transaction commits. Requests that have already passed the relevant authorization checks can finish using the authorization they obtained. Sessions issued without a version require fresh login.
 
 V12 is an explicit, separately deployed schema prerequisite. All backend instances must read the committed version from the same primary database, even if they keep separate servlet session stores. Follow the [P01 rollout runbook](session-revocation-rollout.md).
 
@@ -112,3 +112,11 @@ V12 is an explicit, separately deployed schema prerequisite. All backend instanc
 The operator approved self-service password changes in the Change Password implementation brief as new V1 scope. Any authenticated, active employee can open Account Security and call `POST /api/v1/auth/change-password` with the session cookie, a valid CSRF header and JSON containing only `currentPassword` and `newPassword` strings. The server identifies the employee through the current session. Both inputs follow the existing BCrypt rules, including the 72-byte UTF-8 limit and exact preservation of spaces and Unicode. Confirmation stays in the form.
 
 Success returns `204`. The write serializes with Staff account changes and commits the BCrypt hash, audit timestamp and advanced P01 version together. Old sessions, including the caller, then receive `401` on protected requests. The SPA shows confirmation and requires fresh sign-in. Invalid input or an incorrect current password returns `400`, and a current session with missing or invalid CSRF receives `403`. A rollback preserves the previous hash and sessions. This uses the existing V12 column.
+
+## Employee Session Lifecycle V1
+
+The operator approved this policy in the Session Lifecycle Security V1 brief. Each successful login starts a server-side lifetime with a 30-minute idle timeout and an eight-hour absolute deadline. Requests admitted by the protected HTTP security chain renew only the idle deadline. Public health and CSRF requests and requests rejected by CSRF or the HTTP authorization rules do not renew it. V1 permits concurrent sessions.
+
+At either deadline the session loses authenticated access. Protected API requests return `401 UNAUTHENTICATED`, including requests with a stale session cookie after servlet eviction. A current session with missing or invalid CSRF still receives `403`. Sessions issued before lifetime tracking require a fresh login. Sign-in rotates the session ID and CSRF token, and the SPA preserves its route without replaying the failed request.
+
+Concurrent renewals are serialized per login, and a request admitted before expiration can finish. Expiration does not affect another login or replace P01 revocation. This policy requires no new schema.

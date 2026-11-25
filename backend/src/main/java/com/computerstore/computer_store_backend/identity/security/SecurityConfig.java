@@ -1,8 +1,11 @@
 package com.computerstore.computer_store_backend.identity.security;
 
 import com.computerstore.computer_store_backend.identity.repository.AppUserRepository;
+import com.computerstore.computer_store_backend.shared.time.TimeConfig;
+import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,6 +17,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -27,26 +31,28 @@ import org.springframework.security.web.authentication.session.CompositeSessionA
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 @Configuration(proxyBeanMethods = false)
+@Import(TimeConfig.class)
 public class SecurityConfig {
-    // Production cookie deployment, session timeouts and permission mapping remain pending.
+    // Production cookie deployment remains pending.
     @Bean
     SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users,
+            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users, Clock clock,
             @Value("${csm.staff-management.enabled:false}") boolean staffManagement) throws Exception {
         // Verify the Customer V9 grants before deploying this release.
         return buildApiSecurityFilterChain(http, entryPoint, deniedHandler, contexts, csrfTokens, csrfHandler,
-                users, true, staffManagement);
+                users, clock, true, staffManagement);
     }
 
     SecurityFilterChain buildApiSecurityFilterChain(HttpSecurity http,
             ApiAuthenticationEntryPoint entryPoint, ApiAccessDeniedHandler deniedHandler,
             SecurityContextRepository contexts, CsrfTokenRepository csrfTokens,
-            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users, boolean customerReleased,
+            XorCsrfTokenRequestAttributeHandler csrfHandler, AppUserRepository users, Clock clock, boolean customerReleased,
             boolean staffManagement) throws Exception {
         return http
-                .addFilterBefore(new SessionVersionFilter(users, entryPoint), CsrfFilter.class)
+                .addFilterBefore(new SessionVersionFilter(users, entryPoint, clock), CsrfFilter.class)
+                .addFilterAfter(new SessionVersionFilter.Activity(clock, entryPoint), AuthorizationFilter.class)
                 .authorizeHttpRequests(authorize -> {
                     authorize
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()

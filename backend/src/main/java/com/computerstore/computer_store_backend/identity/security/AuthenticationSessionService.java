@@ -4,6 +4,7 @@ import com.computerstore.computer_store_backend.identity.dto.request.LoginReques
 import com.computerstore.computer_store_backend.identity.dto.response.CurrentUserResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Clock;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -22,14 +23,16 @@ public class AuthenticationSessionService {
     private final AuthenticationManager manager;
     private final SessionAuthenticationStrategy sessions;
     private final SecurityContextRepository contexts;
+    private final Clock clock;
     private final CsrfLogoutHandler csrfLogout;
     private final SecurityContextLogoutHandler contextLogout;
 
     public AuthenticationSessionService(AuthenticationManager manager, SessionAuthenticationStrategy sessions,
-            SecurityContextRepository contexts, CsrfTokenRepository tokens) {
+            SecurityContextRepository contexts, CsrfTokenRepository tokens, Clock clock) {
         this.manager = manager;
         this.sessions = sessions;
         this.contexts = contexts;
+        this.clock = clock;
         this.csrfLogout = new CsrfLogoutHandler(tokens);
         this.contextLogout = new SecurityContextLogoutHandler();
         this.contextLogout.setSecurityContextRepository(contexts);
@@ -39,11 +42,15 @@ public class AuthenticationSessionService {
         var credentials = UsernamePasswordAuthenticationToken.unauthenticated(input.username(), input.password());
         try {
             Authentication authentication = manager.authenticate(credentials);
-            var principal = (EmployeePrincipal) authentication.getPrincipal();
-            principal.eraseCredentials();
-            sessions.onAuthentication(authentication, request, response);
+            var verified = (EmployeePrincipal) authentication.getPrincipal();
+            verified.eraseCredentials();
+            var principal = verified.forSession(clock.instant());
+            var sessionAuthentication = UsernamePasswordAuthenticationToken.authenticated(
+                    principal, null, authentication.getAuthorities());
+            sessionAuthentication.setDetails(authentication.getDetails());
+            sessions.onAuthentication(sessionAuthentication, request, response);
             var context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
+            context.setAuthentication(sessionAuthentication);
             SecurityContextHolder.setContext(context);
             contexts.saveContext(context, request, response);
             return CurrentUserResponse.from(principal);

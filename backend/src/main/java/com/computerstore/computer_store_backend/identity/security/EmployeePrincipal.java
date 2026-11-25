@@ -2,6 +2,7 @@ package com.computerstore.computer_store_backend.identity.security;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.Serial;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -16,15 +17,29 @@ public final class EmployeePrincipal implements UserDetails, CredentialsContaine
     private final String username;
     private final boolean enabled;
     private final Long sessionVersion;
+    private final EmployeeSessionLifetime sessionLifetime;
     private transient String passwordHash;
 
     EmployeePrincipal(Long userId, String username, String passwordHash, boolean enabled, long sessionVersion) {
+        this(userId, username, passwordHash, enabled, sessionVersion, null);
+    }
+
+    private EmployeePrincipal(Long userId, String username, String passwordHash, boolean enabled, long sessionVersion,
+            EmployeeSessionLifetime sessionLifetime) {
         this.userId = Objects.requireNonNull(userId);
         this.username = Objects.requireNonNull(username);
         this.passwordHash = passwordHash;
         this.enabled = enabled;
         this.sessionVersion = sessionVersion;
+        this.sessionLifetime = sessionLifetime;
     }
+
+    EmployeePrincipal forSession(Instant authenticatedAt) {
+        return new EmployeePrincipal(userId, username, null, enabled, sessionVersion,
+                new EmployeeSessionLifetime(authenticatedAt));
+    }
+
+    EmployeeSessionLifetime sessionLifetime() { return sessionLifetime; }
 
     public Long getUserId() { return userId; }
     @Override public String getUsername() { return username; }
