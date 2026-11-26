@@ -4,6 +4,7 @@ import com.computerstore.computer_store_backend.identity.authorization.EmployeeR
 import com.computerstore.computer_store_backend.identity.authorization.RoleResolutionService;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,5 +35,13 @@ public class ReportsService {
     public ReportsOverview overview() {
         requireOverviewAccess();
         return reports.overview();
+    }
+
+    @Transactional(readOnly = true)
+    public InventoryReport inventory(int page, int size) {
+        requireOverviewAccess();
+        var pagination = ListPagination.request(page, size, "sku",
+                () -> new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid report pagination."));
+        return reports.inventory(pagination);
     }
 }

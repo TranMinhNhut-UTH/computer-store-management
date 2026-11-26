@@ -81,7 +81,8 @@ public class SecurityConfig {
                                         "/api/v1/employees/{id}/unlock").authenticated()
                                 .requestMatchers(HttpMethod.PUT, "/api/v1/employees/{id}", "/api/v1/employees/{id}/roles").authenticated();
                     }
-                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/reports/access", "/api/v1/reports/overview")
+                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/reports/access", "/api/v1/reports/overview",
+                                    "/api/v1/reports/inventory")
                             .authenticated().anyRequest().denyAll();
                 })
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)

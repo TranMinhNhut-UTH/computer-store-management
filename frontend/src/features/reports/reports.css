@@ -19,3 +19,20 @@
 .reports-table thead th:not(:first-child), .reports-table td { text-align: right; }
 .reports-table th span { display: block; font-size: var(--csm-font-xs); font-weight: 400; }
 .reports-breakdown > p { margin-bottom: 0; }
+.reports-inventory-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--csm-space-4);
+  margin-block: var(--csm-space-4);
+}
+.reports-inventory-metrics dt { color: var(--csm-muted); font-size: var(--csm-font-sm); }
+.reports-inventory-metrics dd {
+  margin: 0;
+  font-size: var(--csm-font-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.reports-stock-table table { min-width: 35rem; }
+.reports-stock-table :is(th, td):nth-child(2) { text-align: left; overflow-wrap: anywhere; }
+.reports-stock-table td:last-child { white-space: nowrap; }

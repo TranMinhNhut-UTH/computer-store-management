@@ -10,14 +10,20 @@ import com.computerstore.computer_store_backend.reports.ReportsOverview.StatusCo
 import com.computerstore.computer_store_backend.reports.ReportsOverview;
 import com.computerstore.computer_store_backend.reports.ReportsRepository;
 import com.computerstore.computer_store_backend.reports.ReportsService;
+import com.computerstore.computer_store_backend.reports.InventoryReport;
+import com.computerstore.computer_store_backend.shared.error.BusinessException;
+import com.computerstore.computer_store_backend.shared.error.ErrorCode;
+import java.math.BigInteger;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -31,7 +37,7 @@ class ReportsOverviewIT {
         String home = System.getProperty("csm.mysql.home");
         assertNotNull(home, "Set csm.mysql.home to the Windows MySQL 8 installation");
         try (var mysql = DisposableMysql.start(Path.of(home), directory)) {
-            var db = initialize(mysql);
+            var db = initializeWithoutFlyway(mysql);
             var roles = mock(RoleResolutionService.class);
             when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(new CurrentActor(1L, "fixture"),
                     Set.of(EmployeeRole.MANAGER), Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ")));
@@ -71,14 +77,95 @@ class ReportsOverviewIT {
         }
     }
 
+    @Test void inventoryUsesOnlyActiveBalancesAndPaginatesAnExactSnapshot() throws Exception {
+        String home = System.getProperty("csm.mysql.home");
+        assertNotNull(home, "Set csm.mysql.home to the Windows MySQL 8 installation");
+        try (var mysql = DisposableMysql.start(Path.of(home), directory)) {
+            var db = initializeWithoutFlyway(mysql);
+            var roles = mock(RoleResolutionService.class);
+            when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(new CurrentActor(1L, "fixture"),
+                    Set.of(EmployeeRole.MANAGER), Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ")));
+            var reports = new ReportsService(roles, new ReportsRepository(db));
+            var empty = reports.inventory(0, 2);
+            assertEquals(new InventoryReport.Summary(0, "0", 0, 0), empty.summary());
+            assertTrue(empty.items().isEmpty());
+            assertEquals(0, empty.totalPages());
+
+            db.update("""
+                    INSERT INTO category (id,code,name,is_active,created_at,updated_at) VALUES
+                    (1,'A','First',TRUE,UTC_TIMESTAMP(),UTC_TIMESTAMP()),
+                    (2,'B','Second',FALSE,UTC_TIMESTAMP(),UTC_TIMESTAMP())
+                    """);
+            long large = 9_007_199_254_740_993L;
+            stockProduct(db, "C-ZERO", 1, true, 0, 0L);
+            stockProduct(db, "A-BELOW", 2, true, 4, 2L);
+            stockProduct(db, "B-EQUAL", 1, true, 3, 3L);
+            stockProduct(db, "D-ABOVE", 1, true, 5, 6L);
+            stockProduct(db, "E-LARGE", 2, true, large, large);
+            stockProduct(db, "F-MAX", 1, true, 0, Long.MAX_VALUE);
+            stockProduct(db, "G-INACTIVE", 1, false, 4, 0L);
+            stockProduct(db, "H-INACTIVE-MISSING", 1, false, 0, null);
+
+            var before = db.queryForList("SELECT * FROM inventory ORDER BY id");
+            var first = reports.inventory(0, 2);
+            var second = reports.inventory(1, 2);
+            var beyond = reports.inventory(2, 2);
+            var total = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.valueOf(large)).add(BigInteger.valueOf(11));
+            assertEquals(new InventoryReport.Summary(6, total.toString(), 1, 4), first.summary());
+            assertEquals(first.summary(), second.summary());
+            assertEquals(first.summary(), beyond.summary());
+            assertEquals(4, first.totalElements());
+            assertEquals(2, first.totalPages());
+            assertTrue(beyond.items().isEmpty());
+            assertEquals(List.of("A-BELOW", "B-EQUAL"), first.items().stream().map(InventoryReport.LowStockProduct::sku).toList());
+            assertEquals("Second", first.items().getFirst().categoryName());
+            assertEquals(new InventoryReport.LowStockProduct("C-ZERO", "C-ZERO", "First", "0", "0",
+                    InventoryReport.StockStatus.OUT_OF_STOCK), second.items().getFirst());
+            assertEquals(new InventoryReport.LowStockProduct("E-LARGE", "E-LARGE", "Second",
+                    Long.toString(large), Long.toString(large), InventoryReport.StockStatus.LOW_STOCK), second.items().getLast());
+            assertEquals(before, db.queryForList("SELECT * FROM inventory ORDER BY id"));
+
+            stockProduct(db, "I-MISSING", 1, true, 0, null);
+            var failure = assertThrows(BusinessException.class, () -> reports.inventory(0, 2));
+            assertEquals(ErrorCode.BUSINESS_CONFLICT, failure.code());
+            assertEquals(7, reports.overview().products().active());
+        }
+    }
+
+    private static void stockProduct(JdbcTemplate db, String sku, int category, boolean active, long min, Long balance) {
+        db.update("""
+                INSERT INTO product (sku,name,category_id,selling_price,is_active,min_stock_level,created_at,updated_at)
+                VALUES (?,?,?,100,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())
+                """, sku, sku, category, active, min);
+        if (balance != null) {
+            db.update("""
+                    INSERT INTO inventory (product_id,quantity_on_hand,created_at,updated_at)
+                    SELECT id,?,UTC_TIMESTAMP(),UTC_TIMESTAMP() FROM product WHERE sku=?
+                    """, balance, sku);
+        }
+    }
+
+    private static JdbcTemplate initializeWithoutFlyway(DisposableMysql mysql) throws Exception {
+        var db = createEmptySchema(mysql);
+        try (var connection = db.getDataSource().getConnection()) {
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V1__create_initial_schema.sql"));
+        }
+        return db;
+    }
+
     static JdbcTemplate initialize(DisposableMysql mysql) throws Exception {
+        var db = createEmptySchema(mysql);
+        Flyway.configure().dataSource(db.getDataSource()).locations("classpath:db/migration").target("1").load().migrate();
+        return db;
+    }
+
+    private static JdbcTemplate createEmptySchema(DisposableMysql mysql) throws Exception {
         var server = new JdbcTemplate(mysql.dataSource(""));
         mysql.verifyTarget(server);
         server.execute("CREATE DATABASE " + SCHEMA);
         var source = mysql.dataSource(SCHEMA);
         var db = new JdbcTemplate(source);
         assertEquals(SCHEMA, db.queryForObject("SELECT DATABASE()", String.class));
-        Flyway.configure().dataSource(source).locations("classpath:db/migration").target("1").load().migrate();
         return db;
     }
 
