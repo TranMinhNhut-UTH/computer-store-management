@@ -43,8 +43,8 @@ public class ProductService {
     private final boolean creationEnabled;
 
     public ProductService(ProductRepository products, CategoryRepository categories,
-            PermissionPolicy permissions, UtcTimeProvider time, EntityManager entities,
-            InventoryLifecycleService inventory, @Value("${csm.product-creation.enabled:true}") boolean creationEnabled) {
+                          PermissionPolicy permissions, UtcTimeProvider time, EntityManager entities,
+                          InventoryLifecycleService inventory, @Value("${csm.product-creation.enabled:true}") boolean creationEnabled) {
         this.products = products;
         this.categories = categories;
         this.permissions = permissions;
@@ -189,7 +189,7 @@ public class ProductService {
     }
 
     private record Information(String sku, String name, long categoryId, String brandName,
-            String modelCode, String description, long minStockLevel) { }
+                               String modelCode, String description, long minStockLevel) { }
 
     private static Information information(ProductWriteRequest request) {
         if (request == null) throw invalid();
