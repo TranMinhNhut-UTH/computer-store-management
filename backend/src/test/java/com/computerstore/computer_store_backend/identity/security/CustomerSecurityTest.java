@@ -45,6 +45,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CustomerSecurityTest {
     private static final String BASE = "/api/v1/customers";
     private static final String BODY = "{\"code\":\" ac-01 \",\"fullName\":\"Customer\"}";
+    private static final String CONTACT_BODY = """
+            {"code":"ac-01","fullName":"Customer","phone":"+44 (0)123","email":"customer@example.test",
+             "address":"Hà Nội","notes":"Giao buổi sáng"}
+            """;
     private static final List<String> SALES_GRANTS = List.of(
             "CUSTOMER_READ", "CUSTOMER_CREATE", "CUSTOMER_UPDATE");
 
@@ -117,8 +121,9 @@ class CustomerSecurityTest {
                 .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains(
                         "CUSTOMER_CREATE", "CUSTOMER_UPDATE")));
         mvc.perform(get(BASE + "/7").with(user(principal))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
-        mvc.perform(mutations().get(0).with(user(principal)).with(csrf())).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.contact.phone").value("0901234567"))
+                .andExpect(jsonPath("$.passwordHash").doesNotHaveJsonPath());
+        mvc.perform(mutations().get(0).content(CONTACT_BODY).with(user(principal)).with(csrf())).andExpect(status().isCreated())
                 .andExpect(header().string("Location", BASE + "/7"))
                 .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
         mvc.perform(mutations().get(1).with(user(principal)).with(csrf())).andExpect(status().isOk())
@@ -126,12 +131,13 @@ class CustomerSecurityTest {
                 .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
     }
 
-    @Test void managerReadIsAllowedWithRedactedContactAndWritesAreDenied() throws Exception {
+    @Test void managerCanReadContactDetailButCannotWrite() throws Exception {
         when(roles.getResultList()).thenReturn(List.of("MANAGER"));
         when(grants.getResultList()).thenReturn(List.of("CUSTOMER_READ"));
         mvc.perform(get(BASE).with(user(principal))).andExpect(status().isOk()).andExpect(jsonPath("$.allowedActions").isEmpty());
         mvc.perform(get(BASE + "/7").with(user(principal))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.contact").doesNotExist());
+                .andExpect(jsonPath("$.contact.phone").value("0901234567"))
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
         for (var request : mutations()) mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
         verify(customers, never()).saveAndFlush(any());
     }
@@ -142,6 +148,8 @@ class CustomerSecurityTest {
             when(grants.getResultList()).thenReturn(List.of());
             mvc.perform(get(BASE).with(user(principal))).andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+            mvc.perform(get(BASE + "/7").with(user(principal))).andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
             for (var request : mutations()) mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());
         }
         verifyNoInteractions(customers);
@@ -160,24 +168,50 @@ class CustomerSecurityTest {
         verifyNoInteractions(customers);
     }
 
-    @Test void evenSalesCannotSupplyAnyUnapprovedContactField() throws Exception {
+    @Test void contactValidationReturnsSafeFieldErrorsAndRejectsUnsupportedKeys() throws Exception {
         when(roles.getResultList()).thenReturn(List.of("SALES_STAFF"));
         when(grants.getResultList()).thenReturn(SALES_GRANTS);
-        for (String field : List.of("phone", "email", "address", "notes", "contact")) {
+        for (String field : List.of("contact", "role", "passwordHash")) {
             var body = BODY.substring(0, BODY.length() - 1) + ",\"" + field + "\":null}";
             for (var request : List.of(post(BASE), put(BASE + "/7"))) {
                 mvc.perform(request.with(user(principal)).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
                         .andExpect(status().isBadRequest());
             }
         }
+        mvc.perform(post(BASE).with(user(principal)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"X","fullName":"Customer","email":"private-invalid-email","phone":"%s","address":"%s"}
+                                """.formatted("x".repeat(31), "x".repeat(501))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[*].field", org.hamcrest.Matchers.contains("address", "email", "phone")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-invalid-email"))));
+        mvc.perform(post(BASE).with(user(principal)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"X\",\"fullName\":\"Customer\",\"phone\":123}"))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(customers);
+    }
+
+    @Test void createAndUpdatePermissionsDoNotImplyContactReadOrEachOther() throws Exception {
+        when(roles.getResultList()).thenReturn(List.of("SALES_STAFF"));
+        when(grants.getResultList()).thenReturn(List.of("CUSTOMER_CREATE"));
+        mvc.perform(mutations().get(0).content(CONTACT_BODY).with(user(principal)).with(csrf()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
+        mvc.perform(mutations().get(1).content(CONTACT_BODY).with(user(principal)).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(BASE + "/7").with(user(principal))).andExpect(status().isForbidden());
+
+        when(grants.getResultList()).thenReturn(List.of("CUSTOMER_UPDATE"));
+        mvc.perform(mutations().get(0).content(CONTACT_BODY).with(user(principal)).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(mutations().get(1).content(CONTACT_BODY).with(user(principal)).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.contact").doesNotHaveJsonPath());
     }
 
     @Test void csrfAndUnlistedRoutesRemainDeniedAndFieldsAreValidated() throws Exception {
         when(roles.getResultList()).thenReturn(List.of("SALES_STAFF"));
         when(grants.getResultList()).thenReturn(SALES_GRANTS);
-        for (var request : mutations()) mvc.perform(request.with(user(principal))).andExpect(status().isForbidden());
-        for (var request : mutations()) mvc.perform(request.with(user(principal)).with(csrf().useInvalidToken()))
+        for (var request : mutations()) mvc.perform(request.content(CONTACT_BODY).with(user(principal))).andExpect(status().isForbidden());
+        for (var request : mutations()) mvc.perform(request.content(CONTACT_BODY).with(user(principal)).with(csrf().useInvalidToken()))
                 .andExpect(status().isForbidden());
         for (var request : List.of(delete(BASE + "/7"), post(BASE + "/7/reactivate"), post(BASE + "/7/deactivate"), get("/api/v1/purchases"))) {
             mvc.perform(request.with(user(principal)).with(csrf())).andExpect(status().isForbidden());

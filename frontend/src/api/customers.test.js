@@ -24,10 +24,9 @@ test('Customer mutations project the DTO and obtain a fresh CSRF token per reque
     if (path.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test' })
     return Response.json(customer)
   })
-  const form = { ...customer, ...customer.contact }
-  await client.create(form)
-  await client.update(customer.id, form)
   const input = { code: 'AC-01', fullName: 'Khách thử nghiệm' }
+  await client.create({ ...customer, phone: '+84 123', notes: 'Gọi trước' })
+  await client.update(customer.id, { ...input, email: null })
   assert.equal(requests.length, 4)
   for (const [index, suffix, method] of [[1, '', 'POST'], [3, '/' + customer.id, 'PUT']]) {
     assert.equal(requests[index - 1][0], '/api/v1/auth/csrf')
@@ -36,8 +35,19 @@ test('Customer mutations project the DTO and obtain a fresh CSRF token per reque
     assert.equal(options.method, method)
     assert.equal(options.headers['X-CSRF-TOKEN'], 'test')
     assert.equal(options.credentials, 'same-origin')
-    assert.deepEqual(JSON.parse(options.body), input)
   }
+  assert.deepEqual(JSON.parse(requests[1][1].body), { ...input, phone: '+84 123', notes: 'Gọi trước' })
+  assert.deepEqual(JSON.parse(requests[3][1].body), { ...input, email: null })
+})
+
+test('Customer detail exposes only the approved contact projection', async () => {
+  const client = createCustomerClient(async () => Response.json({ ...customer,
+    contact: { ...customer.contact, privateField: 'hidden' }, history: [{ id: 1 }] }))
+  const detail = await client.detail(customer.id)
+  assert.deepEqual(detail.contact, customer.contact)
+  assert.equal(Object.hasOwn(detail, 'history'), false)
+  const malformed = createCustomerClient(async () => Response.json({ ...customer, contact: { phone: 123 } }))
+  await assert.rejects(malformed.detail(customer.id), { status: 502 })
 })
 
 test('Customer client preserves safe authorization failures and rejects malformed records', async () => {

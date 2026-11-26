@@ -5,19 +5,17 @@
 | Method and path | Required permission | Success |
 |---|---|---|
 | GET `/api/v1/customers` | `CUSTOMER_READ` | 200 paginated list |
-| GET `/api/v1/customers/{id}` | `CUSTOMER_READ` | 200 detail |
+| GET `/api/v1/customers/{id}` | `CUSTOMER_READ` | 200 detail with the approved contact projection |
 | POST `/api/v1/customers` | `CUSTOMER_CREATE` | 201 with `Location` |
-| PUT `/api/v1/customers/{id}` | `CUSTOMER_UPDATE` | 200 core field update |
+| PUT `/api/v1/customers/{id}` | `CUSTOMER_UPDATE` | 200 core and supplied contact field update |
 
-List accepts `q` (code or name, up to 200 characters, literal wildcard characters), `active` (optional status filter), `page` (zero-based), and `size` (1–100, default 20). Sort order is `fullName`, then ID. The response contains `items`, `page`, `size`, `totalElements`, `totalPages`, and server-derived `allowedActions` for create and update. IDs are decimal strings. List and detail include `id`, `code`, `fullName`, `active`, and UTC timestamps.
+List accepts `q` (code or name, up to 200 characters, literal wildcard characters), `active` (optional status filter), `page` (zero-based), and `size` (1–100, default 20). Sort order is `fullName`, then ID. The response contains `items`, `page`, `size`, `totalElements`, `totalPages`, and server-derived `allowedActions` for create and update. IDs are decimal strings. List, detail and mutation responses include `id`, `code`, `fullName`, `active`, and UTC timestamps. Detail alone includes `contact` with nullable `phone`, `email`, `address`, and `notes`.
 
-Create and PUT accept only `code` and `fullName`. Code is unique and normalized to uppercase ASCII (maximum 50 characters). Full name is required (maximum 150 characters). PUT preserves ID, status, creation time and all stored contact values. V1 has no delete, deactivate, reactivate, customer account, or customer role.
+Create and PUT require `code` and `fullName`. Code remains unique and normalized to uppercase ASCII (maximum 50 characters). Full name has a 150-character limit. Send optional contact fields as top-level JSON strings or null. POST stores omitted fields as null. PUT preserves each omitted contact field; explicit null or a blank string clears that field. PUT preserves ID, status, and creation time. There is no PATCH, delete, deactivate, reactivate, customer account, or customer role in V1.
 
-### D12 contact decision pending
+### D12 Customer Contact V1
 
-The schema allows nullable phone (30 characters), email (254), address (500) and notes (TEXT). Only customer code is unique. The core release omits contact data from responses, limits search to code and name, and rejects contact keys on create and update, including explicit nulls.
-
-Decide which roles may view or change each contact field and in which workflows (Customer lookup, Sales lookup and profile editing). Decide whether to mask any fields, allow them in search or apply a format if they become writable. The baseline supplies storage limits and optionality without deciding those behaviors.
+The project owner approved this contact projection for Customer Management V1 under D12. It uses the existing nullable phone (30 characters), email (254), address (500), and notes (65,535 UTF-8 bytes) columns. Phone and email are non-unique. Phone accepts international notation without a country-specific format; email uses Bean Validation. Contact values preserve Unicode and case after trimming surrounding whitespace. Search remains by code or name. Sales, payments, Reports and all other D12 projections keep their existing scope. No new permissions or migrations are required.
 
 Errors use the shared ProblemDetail contract. Expect 400 for invalid input, 401 for anonymous access with a valid security context for the request method, 403 for missing permission or CSRF, 404 for a missing record, and 409 for a duplicate code. The database unique constraint backs up the application duplicate check. Each write is transactional and independently authorized.
 
@@ -46,9 +44,9 @@ Existing orders continue to use the nullable FK with `ON DELETE RESTRICT`. An in
 | Session | Live browser result | Isolated security coverage |
 |---|---|---|
 | Anonymous | PASS. The Login screen rendered at `/customers`, and Customer list GET through Vite returned `401`. | `anonymousRequestsReturn401` |
-| MANAGER | PASS for list and read-only UI. The manager.csm session received HTTP 200 with an empty list and no allowed actions or create/edit controls. A missing Customer returned HTTP 404. Detail HTTP 200 remains PENDING until an existing record is available. | `managerReadIsAllowedWithRedactedContactAndWritesAreDenied` verifies list/detail `200`, no allowed actions and mutation `403`. |
+| MANAGER | PASS for list and read-only UI. The manager.csm session received HTTP 200 with an empty list and no allowed actions or create/edit controls. A missing Customer returned HTTP 404. Detail HTTP 200 remains PENDING until an existing record is available. | `managerCanReadContactDetailButCannotWrite` verifies list/detail `200`, the detail projection, no allowed actions and mutation `403`. |
 | ADMIN | PASS. The admin.csm session received HTTP 403 for list and detail, showed the access-denied message and offered no create/edit controls. | `adminAndWarehouseWithoutGrantsAreDenied` verifies list and mutation `403`. |
 | SALES_STAFF | PENDING. There is no local Sales Staff test account. | `salesCanUseAllFourRoutesAndReceivesOnlyGrantedActions` verifies list/detail `200`, create `201`, and update `200` with CSRF. |
 | WAREHOUSE_STAFF | PENDING. There is no local Warehouse Staff test account. | `adminAndWarehouseWithoutGrantsAreDenied` verifies list and mutation `403`. |
 
-The saved `CustomerSecurityTest` run passed all seven cases against the release configuration with isolated fixtures. These browser checks made no data changes. The route patch is applied. The Manager response verifies that the local runtime has an effective CUSTOMER_READ grant. The available smoke record does not include the operator’s V8/V9 history, checksums or full grant read-back. Retain that read-back before declaring the target rollout verified. Positive detail, Sales Staff and Warehouse Staff live checks remain pending.
+The browser results above predate the Customer Contact V1 change and made no data changes. Contact reads and writes were verified with focused HTTP tests and disposable MySQL. The route patch is applied. The Manager response verifies that the local runtime has an effective CUSTOMER_READ grant. The available smoke record does not include the operator’s V8/V9 history, checksums or full grant read-back. Retain that read-back before declaring the target rollout verified. Positive detail, Sales Staff and Warehouse Staff live checks remain pending.

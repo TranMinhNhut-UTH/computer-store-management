@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { customerClient } from '../../api/customers.js'
+import { customerClient, customerContactFields } from '../../api/customers.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
@@ -15,12 +15,18 @@ import { CategoryDialog } from '../categories/CategoryDialog.jsx'
 import '../categories/categories.css'
 
 const fields = [['code', 'Mã khách hàng', 50], ['fullName', 'Họ tên', 150]]
+const contacts = [
+  ['phone', 'Điện thoại', 30, 'tel'],
+  ['email', 'Email', 254, 'email'],
+  ['address', 'Địa chỉ', 500],
+  ['notes', 'Ghi chú'],
+]
 const titles = { detail: 'Chi tiết khách hàng', create: 'Thêm khách hàng', edit: 'Sửa khách hàng' }
 const permissions = { create: 'CUSTOMER_CREATE', edit: 'CUSTOMER_UPDATE' }
 
 function errorText(error) {
   switch (error.status) {
-    case 400: return 'Dữ liệu không hợp lệ. Kiểm tra mã và họ tên khách hàng.'
+    case 400: return 'Dữ liệu không hợp lệ. Kiểm tra các trường trong hồ sơ.'
     case 401: return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
     case 403: return 'Tài khoản hiện không có quyền thực hiện thao tác này.'
     case 404: return 'Không tìm thấy khách hàng.'
@@ -92,7 +98,7 @@ export function CustomerPage({ client = customerClient }) {
     try {
       const record = await client.detail(id, { signal: controller.signal })
       if (controller.signal.aborted) return
-      setValues({ code: record.code, fullName: record.fullName })
+      setValues({ code: record.code, fullName: record.fullName, ...record.contact })
       setDialog({ action, record })
     } catch (error) {
       if (!controller.signal.aborted) { setFailure(error); setDialog({ action }) }
@@ -113,7 +119,19 @@ export function CustomerPage({ client = customerClient }) {
     const name = values.fullName?.trim() ?? ''
     const errors = {}
     if (!/^[A-Za-z0-9._-]{1,50}$/.test(code)) errors.code = 'Nhập mã từ 1 đến 50 ký tự hợp lệ.'
-    if (!name || name.length > 150) errors.fullName = 'Nhập họ tên từ 1 đến 150 ký tự.'
+    if (!name || [...name].length > 150) errors.fullName = 'Nhập họ tên từ 1 đến 150 ký tự.'
+    const changes = { code, fullName: name }
+    for (const [key, , limit] of contacts) {
+      const current = values[key] ?? ''
+      // Send only edited contact fields. An untouched field must survive a concurrent contact edit.
+      if (current === (record?.contact?.[key] ?? '')) continue
+      const value = current.trim()
+      changes[key] = value || null
+      if (limit && [...value].length > limit) errors[key] = `Tối đa ${limit} ký tự.`
+      if (key === 'notes' && new TextEncoder().encode(value).length > 65_535) {
+        errors.notes = 'Ghi chú vượt quá giới hạn lưu trữ.'
+      }
+    }
     setValidation(errors)
     setFailure(null)
     if (Object.keys(errors).length) {
@@ -124,8 +142,8 @@ export function CustomerPage({ client = customerClient }) {
     setSaving(true)
     setFailure(null)
     try {
-      if (action === 'create') await client.create(values)
-      else await client.update(record.id, values)
+      if (action === 'create') await client.create(changes)
+      else await client.update(record.id, changes)
       setDialog(null)
       setList({ loading: true })
       setNotice('Đã lưu hồ sơ khách hàng.')
@@ -135,6 +153,13 @@ export function CustomerPage({ client = customerClient }) {
   }
 
   const action = dialog?.action
+  function fieldError(key) {
+    return validation[key] || (failure?.fields?.includes(key) ? 'Giá trị chưa hợp lệ.' : undefined)
+  }
+  function changeField(key, value) {
+    setValues(previous => ({ ...previous, [key]: value }))
+    setValidation(previous => ({ ...previous, [key]: undefined }))
+  }
   const record = dialog?.record
   const status = item => item.active ? 'Đang sử dụng' : 'Ngừng sử dụng'
 
@@ -175,21 +200,29 @@ export function CustomerPage({ client = customerClient }) {
       {failure && <p role="alert" className="message message-error">{errorText(failure)}</p>}
       {action === 'detail' && record && <>
         <dl>{fields.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{record[key]}</dd></div>)}
+          {contacts.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{record.contact?.[key] || '—'}</dd></div>)}
           <div><dt>Trạng thái</dt><dd>{status(record)}</dd></div>
         </dl>
         <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
       </>}
-      {(action === 'create' || (action === 'edit' && record)) && <form ref={form} onSubmit={submit} noValidate aria-busy={saving}>
-        <fieldset disabled={saving}>{fields.map(([key, label, maxLength]) =>
-              <TextInput key={key} label={label} name={key} maxLength={maxLength}
-                required={key === 'code' || key === 'fullName'} value={values[key] ?? ''}
-                error={validation[key] || (failure?.fields?.includes(key) ? 'Giá trị chưa hợp lệ.' : undefined)}
+      {(action === 'create' || (action === 'edit' && record)) && <form ref={form} onSubmit={submit} noValidate
+        autoComplete="off" aria-busy={saving}>
+        <fieldset disabled={saving}>{[...fields, ...contacts.filter(([key]) => key !== 'notes')].map(([key, label, , inputMode]) =>
+              <TextInput key={key} label={label} name={key} inputMode={inputMode}
+                required={!customerContactFields.includes(key)} value={values[key] ?? ''}
+                error={fieldError(key)}
                 data-initial-focus={key === 'code' || undefined}
-                onChange={event => {
-                  setValues({ ...values, [key]: event.target.value })
-                  setValidation(previous => ({ ...previous, [key]: undefined }))
-                }} />
-          )}</fieldset>
+                onChange={event => changeField(key, event.target.value)} />
+          )}
+          <div className="csm-field">
+            <label htmlFor="customer-notes">Ghi chú</label>
+            <textarea id="customer-notes" name="notes" rows={3} value={values.notes ?? ''}
+              onChange={event => changeField('notes', event.target.value)}
+              aria-invalid={Boolean(fieldError('notes')) || undefined}
+              aria-describedby={fieldError('notes') ? 'customer-notes-error' : undefined} />
+            {fieldError('notes') && <p id="customer-notes-error" className="csm-field-error">{fieldError('notes')}</p>}
+          </div>
+        </fieldset>
         <footer>
           <Button variant="secondary" disabled={saving} onClick={close}>Hủy</Button>
           <Button type="submit" loading={saving} disabled={!allowed(action) || [401, 403, 404].includes(failure?.status)}>

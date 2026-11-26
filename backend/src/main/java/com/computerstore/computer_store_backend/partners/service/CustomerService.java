@@ -50,7 +50,9 @@ public class CustomerService {
 
     public CustomerResponse detail(String id) {
         permissions.requirePermission(CUSTOMER_READ.code());
-        return response(customers.findById(id(id)).orElseThrow(CustomerService::notFound));
+        var customer = customers.findById(id(id)).orElseThrow(CustomerService::notFound);
+        return response(customer, new CustomerResponse.Contact(
+                customer.getPhone(), customer.getEmail(), customer.getAddress(), customer.getNotes()));
     }
 
     @Transactional
@@ -59,7 +61,7 @@ public class CustomerService {
         var values = validated(input);
         rejectDuplicate(values.code(), null);
         var customer = BeanUtils.instantiateClass(Customer.class);
-        applyInformation(customer, values);
+        applyInformation(customer, values, input);
         customer.setActive(true);
         var now = time.now();
         customer.setCreatedAt(now);
@@ -73,7 +75,7 @@ public class CustomerService {
         var values = validated(input);
         var customer = locked(id);
         rejectDuplicate(values.code(), customer.getId());
-        applyInformation(customer, values);
+        applyInformation(customer, values, input);
         customer.setUpdatedAt(time.now());
         return response(save(customer));
     }
@@ -113,12 +115,19 @@ public class CustomerService {
         }
     }
 
-    private static CustomerWriteRequest validated(CustomerWriteRequest input) {
+    private record Information(String code, String fullName) { }
+
+    private static Information validated(CustomerWriteRequest input) {
         if (input == null) throw invalid();
         var code = IdentifierNormalizer.businessCode(input.code());
         var fullName = text(input.fullName(), 150);
         if (code == null || code.isEmpty() || code.length() > 50 || fullName == null) throw invalid();
-        return new CustomerWriteRequest(code, fullName);
+        text(input.phone(), 30);
+        text(input.email(), 254);
+        text(input.address(), 500);
+        var notes = text(input.notes(), 65_535);
+        if (notes != null && notes.getBytes(StandardCharsets.UTF_8).length > 65_535) throw invalid();
+        return new Information(code, fullName);
     }
 
     private static String text(String value, int max) {
@@ -134,15 +143,23 @@ public class CustomerService {
         catch (NumberFormatException ignored) { throw invalid(); }
     }
 
-    private static void applyInformation(Customer customer, CustomerWriteRequest values) {
+    private static void applyInformation(Customer customer, Information values, CustomerWriteRequest input) {
         customer.setCode(values.code());
         customer.setFullName(values.fullName());
+        if (input.supplies("phone")) customer.setPhone(input.phone());
+        if (input.supplies("email")) customer.setEmail(input.email());
+        if (input.supplies("address")) customer.setAddress(input.address());
+        if (input.supplies("notes")) customer.setNotes(input.notes());
     }
 
     private static CustomerResponse response(Customer customer) {
+        return response(customer, null);
+    }
+
+    private static CustomerResponse response(Customer customer, CustomerResponse.Contact contact) {
         return new CustomerResponse(customer.getId().toString(), customer.getCode(), customer.getFullName(),
                 Boolean.TRUE.equals(customer.getActive()), customer.getCreatedAt().toInstant(ZoneOffset.UTC),
-                customer.getUpdatedAt().toInstant(ZoneOffset.UTC));
+                customer.getUpdatedAt().toInstant(ZoneOffset.UTC), contact);
     }
 
     private static BusinessException invalid() { return new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid customer request."); }

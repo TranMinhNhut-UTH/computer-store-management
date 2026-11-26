@@ -53,15 +53,15 @@ async function change(element, value) {
 
 test('Read-only Customer users can list and view details without mutation controls', async () => {
   client.list = async () => ({ ...page, allowedActions: [] })
-  client.detail = async () => ({ ...record, contact: null })
   await render()
   assert.match(container.querySelector('tbody').textContent, /AC-01.*Đại lý.*22\/11\/2026/s)
+  assert.doesNotMatch(container.querySelector('tbody').textContent, /\+84 123|Hà Nội/)
   assert.equal(button('Thêm khách hàng'), undefined)
   assert.equal(label('Sửa AC-01'), null)
   assert.equal(label('Ngừng sử dụng AC-01'), null)
   await click(label('Xem AC-01'))
   assert.match(container.querySelector('dialog').textContent, /Đại lý/)
-  assert.doesNotMatch(container.querySelector('dialog').textContent, /Hà Nội|Điện thoại/)
+  assert.match(container.querySelector('dialog').textContent, /Điện thoại\+84 123.*Email—.*Địa chỉHà Nội/s)
 })
 
 test('Customer create and edit submit, refresh the list, and use the server ID', async () => {
@@ -69,16 +69,46 @@ test('Customer create and edit submit, refresh the list, and use the server ID',
   await click(button('Thêm khách hàng'))
   await change(container.querySelector('dialog [name=code]'), 'NEW')
   await change(container.querySelector('dialog [name=fullName]'), 'Nhà phân phối')
+  await change(container.querySelector('dialog [name=phone]'), '+81 (0)3 1234')
+  await change(container.querySelector('dialog [name=email]'), 'customer@example.test')
+  await change(container.querySelector('dialog [name=address]'), 'Thành phố Hồ Chí Minh')
+  await change(container.querySelector('dialog [name=notes]'), 'Gọi trước\nGiao buổi sáng')
   await submit()
-  assert.deepEqual(calls.slice(-2), [['create', { code: 'NEW', fullName: 'Nhà phân phối' }], ['list', { q: '', active: '', page: 0 }]])
+  assert.deepEqual(calls.slice(-2), [['create', {
+    code: 'NEW', fullName: 'Nhà phân phối', phone: '+81 (0)3 1234', email: 'customer@example.test',
+    address: 'Thành phố Hồ Chí Minh', notes: 'Gọi trước\nGiao buổi sáng',
+  }], ['list', { q: '', active: '', page: 0 }]])
   await click(label('Sửa AC-01'))
-  assert.equal(container.querySelector('dialog [name=phone]'), null)
+  assert.equal(container.querySelector('dialog [name=phone]').value, '+84 123')
   await change(container.querySelector('dialog [name=fullName]'), 'Tên đã sửa')
   await submit()
   const edit = calls.find(([type]) => type === 'update')
   assert.equal(edit[1], record.id)
   assert.deepEqual(edit[2], { code: record.code, fullName: 'Tên đã sửa' })
+  await click(label('Sửa AC-01'))
+  await change(container.querySelector('dialog [name=phone]'), '')
+  await submit()
+  assert.deepEqual(calls.filter(([type]) => type === 'update').at(-1)[2],
+    { code: record.code, fullName: record.fullName, phone: null })
   assert.equal(container.querySelector('dialog'), null)
+})
+
+test('Customer contact form validates length and retains input on a server email error', async () => {
+  client.create = async () => { throw { status: 400, fields: ['email'] } }
+  await render()
+  await click(button('Thêm khách hàng'))
+  await change(container.querySelector('[name=code]'), 'NEW')
+  await change(container.querySelector('[name=fullName]'), 'Khách mới')
+  await change(container.querySelector('[name=phone]'), '1'.repeat(31))
+  await submit()
+  assert.equal(document.activeElement.name, 'phone')
+  assert.match(container.textContent, /Tối đa 30 ký tự/)
+  await change(container.querySelector('[name=phone]'), '+44 123')
+  const email = container.querySelector('[name=email]')
+  await change(email, 'invalid-email')
+  await submit()
+  assert.equal(email.getAttribute('aria-invalid'), 'true')
+  assert.equal(email.value, 'invalid-email')
 })
 
 test('Denied detail blocks the edit form and missing rows show the empty state', async () => {
