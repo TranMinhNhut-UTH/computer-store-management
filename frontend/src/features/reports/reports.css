@@ -36,3 +36,4 @@
 .reports-stock-table table { min-width: 35rem; }
 .reports-stock-table :is(th, td):nth-child(2) { text-align: left; overflow-wrap: anywhere; }
 .reports-stock-table td:last-child { white-space: nowrap; }
+.reports-stock-filter { max-width: 16rem; margin-block: var(--csm-space-4); }

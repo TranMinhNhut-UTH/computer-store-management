@@ -12,6 +12,16 @@ import './reports.css'
 
 const labels = { products: 'Sản phẩm', categories: 'Danh mục', suppliers: 'Nhà cung cấp', customers: 'Khách hàng' }
 const numbers = new Intl.NumberFormat('vi-VN')
+const stockFilters = {
+  ALL: { label: 'Tất cả sản phẩm', noun: 'sản phẩm', empty: 'Không có sản phẩm đang kinh doanh' },
+  LOW: { label: 'Tồn thấp', noun: 'sản phẩm tồn thấp', empty: 'Không có sản phẩm tồn thấp' },
+  OUT: { label: 'Hết hàng', noun: 'sản phẩm hết hàng', empty: 'Không có sản phẩm hết hàng' },
+}
+const stockStatuses = {
+  OUT_OF_STOCK: { label: 'Hết hàng', variant: 'error' },
+  LOW_STOCK: { label: 'Tồn thấp', variant: 'warning' },
+  NORMAL: { label: 'Bình thường', variant: 'success' },
+}
 
 function reportError(status, fallback) {
   if (status === 403) return 'Tài khoản hiện không có quyền xem báo cáo.'
@@ -20,7 +30,7 @@ function reportError(status, fallback) {
 }
 
 function InventoryReport() {
-  const [query, setQuery] = useState({ page: 0 })
+  const [query, setQuery] = useState({ page: 0, filter: 'LOW' })
   const [settled, setSettled] = useState(null)
   const current = settled?.query === query ? settled : null
 
@@ -29,7 +39,7 @@ function InventoryReport() {
     reportsClient.getInventory(query, { signal: controller.signal }).then(data => {
       if (controller.signal.aborted) return
       if (query.page > 0 && query.page >= data.totalPages) {
-        setQuery({ page: Math.max(0, data.totalPages - 1) })
+        setQuery(previous => previous === query ? { ...query, page: Math.max(0, data.totalPages - 1) } : previous)
       } else setSettled({ query, data })
     }).catch(error => {
       if (!controller.signal.aborted) setSettled({ query, error })
@@ -38,8 +48,16 @@ function InventoryReport() {
   }, [query])
 
   const { data, error } = current ?? {}
+  const selected = stockFilters[query.filter]
   return <Card className="reports-breakdown" aria-labelledby="reports-inventory">
     <h2 id="reports-inventory">Tổng quan tồn kho</h2>
+    <div className="csm-field reports-stock-filter">
+      <label htmlFor="reports-stock-filter">Lọc sản phẩm theo tồn kho</label>
+      <select id="reports-stock-filter" value={query.filter}
+        onChange={event => setQuery({ page: 0, filter: event.target.value })}>
+        {Object.entries(stockFilters).map(([value, { label }]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+    </div>
     {!current && <LoadingState label="Đang tải báo cáo tồn kho…" />}
     {error && <ListError status={error.status} onRetry={() => setQuery({ ...query })}
       message={reportError(error.status, error.status === 409
@@ -52,25 +70,25 @@ function InventoryReport() {
         <div><dt>SKU hết hàng</dt><dd>{numbers.format(data.summary.outOfStockSkus)}</dd></div>
         <div><dt>SKU tồn thấp (gồm hết hàng)</dt><dd>{numbers.format(data.summary.lowStockSkus)}</dd></div>
       </dl>
-      <h3 id="reports-low-stock">Sản phẩm tồn thấp</h3>
-      {data.items.length === 0 ? <EmptyState title="Không có sản phẩm tồn thấp" /> : <>
-        <div className="reports-table reports-stock-table" role="region" aria-labelledby="reports-low-stock" tabIndex={0}>
-          <table aria-labelledby="reports-low-stock">
+      <h3 id="reports-stock-list">{selected.label}</h3>
+      {data.items.length === 0 ? <EmptyState title={selected.empty} /> : <>
+        <div className="reports-table reports-stock-table" role="region" aria-labelledby="reports-stock-list" tabIndex={0}>
+          <table aria-labelledby="reports-stock-list">
             <thead><tr>{['SKU / Sản phẩm', 'Danh mục', 'Tồn hiện tại', 'Ngưỡng tối thiểu', 'Trạng thái']
               .map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
             <tbody>{data.items.map(row => {
-              const empty = row.stockStatus === 'OUT_OF_STOCK'
+              const status = stockStatuses[row.stockStatus]
               return <tr key={row.sku}>
                 <th scope="row"><span className="csm-muted">{row.sku}</span>{row.productName}</th>
                 <td>{row.categoryName}</td>
                 <td>{numbers.format(BigInt(row.quantityOnHand))}</td>
                 <td>{numbers.format(BigInt(row.minStockLevel))}</td>
-                <td><StatusBadge variant={empty ? 'error' : 'warning'}>{empty ? 'Hết hàng' : 'Tồn thấp'}</StatusBadge></td>
+                <td><StatusBadge variant={status.variant}>{status.label}</StatusBadge></td>
               </tr>
             })}</tbody>
           </table>
         </div>
-        <RecordPagination result={data} noun="sản phẩm tồn thấp" onPage={page => setQuery({ page })} />
+        <RecordPagination result={data} noun={selected.noun} onPage={page => setQuery({ ...query, page })} />
       </>}
     </>}
   </Card>

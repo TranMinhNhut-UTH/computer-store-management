@@ -540,7 +540,7 @@ test('reports recover from a network error and distinguish an empty database', a
   assert.equal(container.querySelector('.reports-page table'), null)
 })
 
-test('inventory reports render exact stock, status and pagination and isolate integrity errors', async () => {
+test('inventory reports switch filters from a later page, preserve exact stock and isolate integrity errors', async () => {
   authenticated = true
   reportAccess = true
   window.history.replaceState(null, '', '/reports')
@@ -551,19 +551,33 @@ test('inventory reports render exact stock, status and pagination and isolate in
   let conflict = false
   inventoryResponse = params => {
     const page = Number(params.get('page'))
+    const filter = params.get('filter') ?? 'LOW'
     if (conflict) return Response.json({ code: 'BUSINESS_CONFLICT' }, { status: 409 })
-    const quantity = page ? '0' : '9007199254740993'
+    const low = index => ({
+      sku: 'SKU-' + index, productName: 'Mặt hàng thử', categoryName: 'Danh mục thử',
+      quantityOnHand: '9007199254740993', minStockLevel: '9007199254740993', stockStatus: 'LOW_STOCK',
+    })
+    const out = { ...low(0), sku: 'Z-EMPTY', quantityOnHand: '0', stockStatus: 'OUT_OF_STOCK' }
+    const normal = {
+      ...low(0), sku: 'N-NORMAL', quantityOnHand: String(9223372036854775810n - 20n * 9007199254740993n),
+      minStockLevel: '0', stockStatus: 'NORMAL',
+    }
+    const lowItems = Array.from({ length: 20 }, (_, index) => low(index))
+    const items = { ALL: [normal, ...lowItems, out], LOW: [...lowItems, out], OUT: [out] }[filter]
     return Response.json({
-      summary: { activeSkus: 21, totalQuantity: '9223372036854775810', outOfStockSkus: 1, lowStockSkus: 21 },
-      items: Array.from({ length: page ? 1 : 20 }, (_, index) => ({
-        sku: page ? 'Z-EMPTY' : 'SKU-' + index, productName: 'Mặt hàng thử', categoryName: 'Danh mục thử',
-        quantityOnHand: quantity, minStockLevel: '9007199254740993', stockStatus: page ? 'OUT_OF_STOCK' : 'LOW_STOCK',
-      })),
-      page, size: 20, totalElements: 21, totalPages: 2,
+      summary: { activeSkus: 22, totalQuantity: '9223372036854775810', outOfStockSkus: 1, lowStockSkus: 21 },
+      items: items.slice(page * 20, (page + 1) * 20),
+      page, size: 20, totalElements: items.length, totalPages: Math.ceil(items.length / 20),
     })
   }
   await render()
   const region = container.querySelector('[aria-labelledby="reports-inventory"]')
+  const select = region.querySelector('select')
+  const filterBy = value => act(async () => {
+    select.value = value
+    select.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
+  assert.equal(select.value, 'LOW')
   assert.match(region.querySelector('.reports-inventory-metrics').textContent, /9\.223\.372\.036\.854\.775\.810/)
   assert.match(region.querySelector('tbody').textContent, /9\.007\.199\.254\.740\.993.*Tồn thấp/)
   assert.match(region.querySelector('tbody').textContent, /SKU-0.*Danh mục thử/)
@@ -571,8 +585,17 @@ test('inventory reports render exact stock, status and pagination and isolate in
   await click(button('Trang sau'))
   assert.match(region.querySelector('tbody').textContent, /Z-EMPTY.*Hết hàng/)
   assert.ok(requests.some(entry => entry.url.endsWith('/inventory?page=1&size=20')))
+  await filterBy('ALL')
+  assert.match(region.querySelector('tbody').textContent, /N-NORMAL.*Bình thường/)
+  assert.match(region.querySelector('nav').textContent, /22 sản phẩm · Trang 1\/2/)
+  assert.ok(requests.at(-1).url.endsWith('/inventory?page=0&size=20&filter=ALL'))
+  await filterBy('OUT')
+  assert.equal(region.querySelectorAll('tbody tr').length, 1)
+  assert.match(region.querySelector('tbody').textContent, /Z-EMPTY.*Hết hàng/)
+  assert.match(region.querySelector('nav').textContent, /1 sản phẩm hết hàng · Trang 1\/1/)
+  assert.ok(requests.at(-1).url.endsWith('/inventory?page=0&size=20&filter=OUT'))
   conflict = true
-  await click(button('Trang trước'))
+  await filterBy('LOW')
   assert.match(region.querySelector('[role=alert]').textContent, /chưa có số dư tồn kho/)
   assert.equal(region.querySelector('.reports-inventory-metrics'), null)
   assert.equal(container.querySelectorAll('.reports-kpi').length, 4)

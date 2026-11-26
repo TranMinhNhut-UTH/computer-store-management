@@ -6,7 +6,7 @@
 |---|---|
 | GET `/api/v1/reports/access` | `204`. Checks current permissions without running aggregate queries. The signed-in sidebar uses this response. |
 | GET `/api/v1/reports/overview` | `200`. Returns the catalog and partner aggregates described below. |
-| GET `/api/v1/reports/inventory?page=0&size=20` | `200`. Returns the current stock summary and paginated low-stock Products. |
+| GET `/api/v1/reports/inventory?page=0&size=20&filter=ALL` | `200`. Returns the current stock summary and a paginated Product list. Omitting `filter` returns the low-stock list. |
 
 All report routes require a current authenticated session, a server-resolved `MANAGER` role and **all four** existing read permissions. The server checks each request independently. Anonymous or expired sessions receive `401`. Authenticated sessions that lack the role or any required grant receive `403`. The API has no write operations.
 
@@ -29,7 +29,9 @@ The reports use the existing grants deployed by V1–V9 and add no permission or
 
 `summary` contains `activeSkus`, `totalQuantity`, `outOfStockSkus` and `lowStockSkus`. All four metrics use active Products and `inventory.quantity_on_hand`. Low stock includes zero and equals the count at or below `min_stock_level`. The Product's active status determines eligibility independently of Category status. A missing balance for any active Product returns `409 BUSINESS_CONFLICT` for this route. The catalog and partner overview remains available.
 
-The response also contains `items`, `page`, `size`, `totalElements` and `totalPages`. Each item contains `sku`, `productName`, `categoryName`, `quantityOnHand`, `minStockLevel`, and `stockStatus` (`OUT_OF_STOCK` or `LOW_STOCK`). Rows are sorted by SKU and Product ID. Paging is zero-based, with size 1–100 (default 20). Quantities and thresholds are decimal strings to preserve exact BIGINT values and larger totals. The summary, pagination totals and page share one MySQL statement snapshot.
+The optional `filter` accepts `ALL` for all active Products, `LOW` for quantities at or below the threshold (the default), or `OUT` for zero stock. The summary always covers all active Products. `totalElements` and `totalPages` count only matches for the selected filter.
+
+The response retains `items`, `page`, `size`, `totalElements` and `totalPages`. Each item contains `sku`, `productName`, `categoryName`, `quantityOnHand`, `minStockLevel`, and `stockStatus`. The status is `OUT_OF_STOCK` at zero, `LOW_STOCK` for positive quantities at or below the threshold, and `NORMAL` above the threshold. Rows are sorted by SKU and Product ID. Paging is zero-based, with size 1–100 (default 20). Quantities and thresholds are decimal strings to preserve exact BIGINT values and larger totals. The summary, pagination totals and page share one MySQL statement snapshot.
 
 ## TV2 handoff and deferred metrics
 

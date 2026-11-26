@@ -28,6 +28,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import static org.mockito.Mockito.*;
+import static com.computerstore.computer_store_backend.reports.InventoryReport.StockFilter.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -61,6 +62,8 @@ class ReportsSecurityTest {
         resolved(EmployeeRole.MANAGER, Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ"));
         mvc.perform(get(BASE + "/overview").with(user("fixture"))).andExpect(status().isForbidden());
         mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isForbidden());
+        mvc.perform(get(BASE + "/inventory").param("filter", "ALL").with(user("fixture")))
+                .andExpect(status().isForbidden());
         for (var role : List.of(EmployeeRole.ADMIN, EmployeeRole.SALES_STAFF, EmployeeRole.WAREHOUSE_STAFF)) {
             resolved(role, READS);
             for (String path : PATHS) {
@@ -74,20 +77,26 @@ class ReportsSecurityTest {
     @Test void managerReadsInventoryWithExistingGrantsAndBoundedPagination() throws Exception {
         resolved(EmployeeRole.MANAGER, READS);
         var summary = new InventoryReport.Summary(1, "9007199254740993", 0, 1);
-        var row = new InventoryReport.LowStockProduct("SKU", "Product", "Category",
+        var row = new InventoryReport.StockProduct("SKU", "Product", "Category",
                 "9007199254740993", "9007199254740993", InventoryReport.StockStatus.LOW_STOCK);
-        when(reports.inventory(any())).thenReturn(new InventoryReport(summary, List.of(row), 0, 20, 1, 1));
+        var inventory = new InventoryReport(summary, List.of(row), 0, 20, 1, 1);
+        when(reports.inventory(any(), any())).thenReturn(inventory);
         mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.summary.totalQuantity").value("9007199254740993"))
                 .andExpect(jsonPath("$.items[0].minStockLevel").value("9007199254740993"))
                 .andExpect(jsonPath("$.items[0].stockStatus").value("LOW_STOCK"))
                 .andExpect(jsonPath("$.items[0].sellingPrice").doesNotHaveJsonPath())
                 .andExpect(jsonPath("$.totalElements").value(1));
-        for (String invalid : List.of("?page=-1", "?size=101", "?size=0", "?page=2147483647&size=2")) {
+        verify(reports).inventory(argThat(page -> page.getPageNumber() == 0 && page.getPageSize() == 20), eq(LOW));
+        for (var filter : List.of(ALL, OUT)) {
+            mvc.perform(get(BASE + "/inventory").param("filter", filter.name()).with(user("fixture")))
+                    .andExpect(status().isOk());
+            verify(reports).inventory(any(), eq(filter));
+        }
+        for (String invalid : List.of("?page=-1", "?size=101", "?size=0", "?page=2147483647&size=2", "?filter=UNKNOWN")) {
             mvc.perform(get(BASE + "/inventory" + invalid).with(user("fixture")))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         }
-        verify(reports).inventory(argThat(page -> page.getPageNumber() == 0 && page.getPageSize() == 20));
         verifyNoMoreInteractions(reports);
     }
 

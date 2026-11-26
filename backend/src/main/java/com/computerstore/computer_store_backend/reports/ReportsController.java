@@ -29,7 +29,8 @@ public class ReportsController {
 
     @GetMapping("/inventory")
     public InventoryReport inventory(@RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return reports.inventory(page, size);
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "LOW") InventoryReport.StockFilter filter) {
+        return reports.inventory(page, size, filter);
     }
 }

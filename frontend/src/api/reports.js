@@ -9,11 +9,14 @@ const isBreakdown = value => [value?.total, value?.active, value?.inactive].ever
   && value.total === value.active + value.inactive
 const isQuantity = value => typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)
 
-function isLowStockProduct(row) {
-  return ['sku', 'productName', 'categoryName'].every(key => typeof row?.[key] === 'string')
-    && isQuantity(row.quantityOnHand) && isQuantity(row.minStockLevel)
-    && BigInt(row.quantityOnHand) <= BigInt(row.minStockLevel)
-    && row.stockStatus === (row.quantityOnHand === '0' ? 'OUT_OF_STOCK' : 'LOW_STOCK')
+function isStockProduct(row, filter) {
+  if (!['sku', 'productName', 'categoryName'].every(key => typeof row?.[key] === 'string')
+      || !isQuantity(row.quantityOnHand) || !isQuantity(row.minStockLevel)) return false
+  const quantity = BigInt(row.quantityOnHand)
+  const low = quantity <= BigInt(row.minStockLevel)
+  const status = quantity === 0n ? 'OUT_OF_STOCK' : low ? 'LOW_STOCK' : 'NORMAL'
+  return row.stockStatus === status
+    && (filter === 'ALL' || (filter === 'LOW' && low) || (filter === 'OUT' && quantity === 0n))
 }
 
 export function createReportsClient(fetchRequest) {
@@ -29,15 +32,17 @@ export function createReportsClient(fetchRequest) {
             && isBreakdown(row.products))) throw new ApiError(502)
       return data
     },
-    async getInventory({ page = 0, size = 20 } = {}, options) {
+    async getInventory({ page = 0, size = 20, filter = 'LOW' } = {}, options) {
       const params = new URLSearchParams({ page: String(page), size: String(size) })
+      if (filter !== 'LOW') params.set('filter', filter)
       const data = await request(base + '/inventory?' + params, options)
       validateListPage(data, page, size)
       const { summary } = data
+      const total = { ALL: summary?.activeSkus, LOW: summary?.lowStockSkus, OUT: summary?.outOfStockSkus }[filter]
       if (![summary?.activeSkus, summary?.outOfStockSkus, summary?.lowStockSkus].every(isCount)
           || !isQuantity(summary.totalQuantity) || summary.outOfStockSkus > summary.lowStockSkus
-          || summary.lowStockSkus > summary.activeSkus || summary.lowStockSkus !== data.totalElements
-          || !data.items.every(isLowStockProduct)) throw new ApiError(502)
+          || summary.lowStockSkus > summary.activeSkus || total !== data.totalElements
+          || !data.items.every(row => isStockProduct(row, filter))) throw new ApiError(502)
       return data
     },
   }

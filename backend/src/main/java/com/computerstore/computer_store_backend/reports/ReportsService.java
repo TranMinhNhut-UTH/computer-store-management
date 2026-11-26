@@ -38,10 +38,10 @@ public class ReportsService {
     }
 
     @Transactional(readOnly = true)
-    public InventoryReport inventory(int page, int size) {
+    public InventoryReport inventory(int page, int size, InventoryReport.StockFilter filter) {
         requireOverviewAccess();
         var pagination = ListPagination.request(page, size, "sku",
                 () -> new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid report pagination."));
-        return reports.inventory(pagination);
+        return reports.inventory(pagination, filter);
     }
 }

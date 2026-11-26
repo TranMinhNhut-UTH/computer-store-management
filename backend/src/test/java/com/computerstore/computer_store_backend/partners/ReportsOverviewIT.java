@@ -27,6 +27,7 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static com.computerstore.computer_store_backend.reports.InventoryReport.StockFilter.*;
 
 class ReportsOverviewIT {
     // The shared test harness allowlists this schema on its disposable named-pipe server.
@@ -86,10 +87,13 @@ class ReportsOverviewIT {
             when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(new CurrentActor(1L, "fixture"),
                     Set.of(EmployeeRole.MANAGER), Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ")));
             var reports = new ReportsService(roles, new ReportsRepository(db));
-            var empty = reports.inventory(0, 2);
-            assertEquals(new InventoryReport.Summary(0, "0", 0, 0), empty.summary());
-            assertTrue(empty.items().isEmpty());
-            assertEquals(0, empty.totalPages());
+            for (var filter : InventoryReport.StockFilter.values()) {
+                var empty = reports.inventory(0, 2, filter);
+                assertEquals(new InventoryReport.Summary(0, "0", 0, 0), empty.summary());
+                assertTrue(empty.items().isEmpty());
+                assertEquals(0, empty.totalElements());
+                assertEquals(0, empty.totalPages());
+            }
 
             db.update("""
                     INSERT INTO category (id,code,name,is_active,created_at,updated_at) VALUES
@@ -107,9 +111,9 @@ class ReportsOverviewIT {
             stockProduct(db, "H-INACTIVE-MISSING", 1, false, 0, null);
 
             var before = db.queryForList("SELECT * FROM inventory ORDER BY id");
-            var first = reports.inventory(0, 2);
-            var second = reports.inventory(1, 2);
-            var beyond = reports.inventory(2, 2);
+            var first = reports.inventory(0, 2, LOW);
+            var second = reports.inventory(1, 2, LOW);
+            var beyond = reports.inventory(2, 2, LOW);
             var total = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.valueOf(large)).add(BigInteger.valueOf(11));
             assertEquals(new InventoryReport.Summary(6, total.toString(), 1, 4), first.summary());
             assertEquals(first.summary(), second.summary());
@@ -117,17 +121,39 @@ class ReportsOverviewIT {
             assertEquals(4, first.totalElements());
             assertEquals(2, first.totalPages());
             assertTrue(beyond.items().isEmpty());
-            assertEquals(List.of("A-BELOW", "B-EQUAL"), first.items().stream().map(InventoryReport.LowStockProduct::sku).toList());
+            assertEquals(List.of("A-BELOW", "B-EQUAL"), first.items().stream().map(InventoryReport.StockProduct::sku).toList());
             assertEquals("Second", first.items().getFirst().categoryName());
-            assertEquals(new InventoryReport.LowStockProduct("C-ZERO", "C-ZERO", "First", "0", "0",
+            assertEquals(new InventoryReport.StockProduct("C-ZERO", "C-ZERO", "First", "0", "0",
                     InventoryReport.StockStatus.OUT_OF_STOCK), second.items().getFirst());
-            assertEquals(new InventoryReport.LowStockProduct("E-LARGE", "E-LARGE", "Second",
+            assertEquals(new InventoryReport.StockProduct("E-LARGE", "E-LARGE", "Second",
                     Long.toString(large), Long.toString(large), InventoryReport.StockStatus.LOW_STOCK), second.items().getLast());
+
+            var all = reports.inventory(0, 6, ALL);
+            assertEquals(first.summary(), all.summary());
+            assertEquals(6, all.totalElements());
+            assertEquals(List.of("A-BELOW", "B-EQUAL", "C-ZERO", "D-ABOVE", "E-LARGE", "F-MAX"),
+                    all.items().stream().map(InventoryReport.StockProduct::sku).toList());
+            assertEquals(List.of(InventoryReport.StockStatus.LOW_STOCK, InventoryReport.StockStatus.LOW_STOCK,
+                    InventoryReport.StockStatus.OUT_OF_STOCK, InventoryReport.StockStatus.NORMAL,
+                    InventoryReport.StockStatus.LOW_STOCK, InventoryReport.StockStatus.NORMAL),
+                    all.items().stream().map(InventoryReport.StockProduct::stockStatus).toList());
+            assertEquals(Long.toString(Long.MAX_VALUE), all.items().getLast().quantityOnHand());
+            var lastPage = reports.inventory(2, 2, ALL);
+            assertEquals(3, lastPage.totalPages());
+            assertEquals(all.items().subList(4, 6), lastPage.items());
+
+            var out = reports.inventory(0, 2, OUT);
+            assertEquals(first.summary(), out.summary());
+            assertEquals(1, out.totalElements());
+            assertEquals(1, out.totalPages());
+            assertEquals(List.of(second.items().getFirst()), out.items());
             assertEquals(before, db.queryForList("SELECT * FROM inventory ORDER BY id"));
 
             stockProduct(db, "I-MISSING", 1, true, 0, null);
-            var failure = assertThrows(BusinessException.class, () -> reports.inventory(0, 2));
-            assertEquals(ErrorCode.BUSINESS_CONFLICT, failure.code());
+            for (var filter : InventoryReport.StockFilter.values()) {
+                var failure = assertThrows(BusinessException.class, () -> reports.inventory(0, 2, filter));
+                assertEquals(ErrorCode.BUSINESS_CONFLICT, failure.code());
+            }
             assertEquals(7, reports.overview().products().active());
         }
     }

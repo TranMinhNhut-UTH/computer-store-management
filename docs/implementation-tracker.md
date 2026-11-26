@@ -99,7 +99,7 @@ Các ID FND-008–011 thuộc Inventory Foundation của TV2, được đặt c�
 | PAY-001 | Payment | TV2 | TODO | TODO | TODO | TODO | Ghi nhận CASH/BANK_TRANSFER/CARD offline, void theo design; trạng thái thanh toán tính riêng, kiểm tra aggregate dưới khóa. DEP-002/003/004; SAL-002. |
 | PAY-002 | PaymentRefund | TV2 | TODO | TODO | TODO | TODO | Liên kết payment gốc, không vượt số đã thu; phối hợp cancel/return atomic, không xóa lịch sử. FND-009/011; DEP-007/008. |
 | RET-001 | SalesReturn/SalesReturnItem | TV2 | TODO | TODO | TODO | TODO | Đơn COMPLETED đã trả đủ, 7 ngày lịch; số trả lũy kế không vượt bán; chỉ restock phần bán lại được, refund khớp return. P07; DEP-007/008. |
-| RPT-001 | Basic Reports | TV1 | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | Đã triển khai tổng hợp danh mục/đối tác và báo cáo tồn hiện tại, hết hàng, tồn thấp (FR-RPT-03/04, FR-INV-11) cho MANAGER. Kiểm thử trên MySQL tách biệt; không tính thiếu dòng số dư là tồn 0. Doanh thu, số bán/trả chờ DEP-008 và P07; lịch sử nhập-xuất chờ INV-002. Không tính lợi nhuận hoặc trừ cash refund lần nữa. |
+| RPT-001 | Basic Reports | TV1 | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | IN_PROGRESS | Đã triển khai tổng hợp danh mục/đối tác và báo cáo tồn hiện tại (FR-RPT-03), hết hàng, tồn thấp (FR-RPT-04, FR-INV-11) cho MANAGER. Danh sách phân trang có bộ lọc tất cả sản phẩm đang kinh doanh, tồn thấp (mặc định) và hết hàng. Kiểm thử trên MySQL tách biệt; không tính thiếu dòng số dư là tồn 0. Doanh thu, số bán/trả chờ DEP-008 và P07; lịch sử nhập-xuất chờ INV-002. Không tính lợi nhuận hoặc trừ cash refund lần nữa. |
 
 ### Shared Frontend Foundation — milestone ngoài bảng task
 
