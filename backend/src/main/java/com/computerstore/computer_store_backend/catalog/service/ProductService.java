@@ -10,16 +10,20 @@ import com.computerstore.computer_store_backend.catalog.entity.Product;
 import com.computerstore.computer_store_backend.catalog.repository.CategoryRepository;
 import com.computerstore.computer_store_backend.catalog.repository.ProductRepository;
 import com.computerstore.computer_store_backend.identity.authorization.PermissionPolicy;
+import com.computerstore.computer_store_backend.inventory.service.InventoryLifecycleService;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
 import java.util.Objects;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,18 +38,28 @@ public class ProductService {
     private final CategoryRepository categories;
     private final PermissionPolicy permissions;
     private final UtcTimeProvider time;
+    private final EntityManager entities;
+    private final InventoryLifecycleService inventory;
+    private final boolean creationEnabled;
 
     public ProductService(ProductRepository products, CategoryRepository categories,
-            PermissionPolicy permissions, UtcTimeProvider time) {
+            PermissionPolicy permissions, UtcTimeProvider time, EntityManager entities,
+            InventoryLifecycleService inventory, @Value("${csm.product-creation.enabled:true}") boolean creationEnabled) {
         this.products = products;
         this.categories = categories;
         this.permissions = permissions;
         this.time = time;
+        this.entities = entities;
+        this.inventory = inventory;
+        this.creationEnabled = creationEnabled;
     }
 
     public ProductPageResponse list(String query, Boolean active, String categoryId, int page, int size) {
         var allowedActions = permissions.availableActions(PRODUCT_READ,
-                PRODUCT_UPDATE, PRODUCT_PRICE_UPDATE, PRODUCT_DEACTIVATE);
+                PRODUCT_UPDATE, PRODUCT_PRICE_UPDATE, PRODUCT_DEACTIVATE, PRODUCT_CREATE);
+        if (!creationEnabled || !allowedActions.contains(PRODUCT_PRICE_UPDATE.code())) {
+            allowedActions = allowedActions.stream().filter(code -> !PRODUCT_CREATE.code().equals(code)).toList();
+        }
         var pagination = ListPagination.request(page, size, "name", ProductService::invalid);
         var q = text(query, 200, false);
         var pattern = q == null || q.isEmpty() ? null :
@@ -67,12 +81,29 @@ public class ProductService {
         permissions.requirePermission(PRODUCT_PRICE_UPDATE.code());
         if (request == null) throw invalid();
         var values = information(request.information());
-        price(request.sellingPrice());
-        activeCategory(values.categoryId());
+        var amount = price(request.sellingPrice());
+        if (!creationEnabled) {
+            throw conflict("Product creation is currently disabled.");
+        }
+        // Lock the active Category before inserting Product, using the same lock as Category deactivation.
+        var category = activeCategory(values.categoryId());
         rejectDuplicate(values.sku(), null);
-        // DEP-001: Product and its initial Inventory row must be written atomically.
-        // No TV2-approved inventory service is available. Do not insert either row.
-        throw conflict("Product creation is unavailable until the inventory initialization contract is integrated.");
+        var product = BeanUtils.instantiateClass(Product.class);
+        product.setSku(values.sku());
+        product.setName(values.name());
+        product.setCategory(category);
+        product.setBrandName(values.brandName());
+        product.setModelCode(values.modelCode());
+        product.setDescription(values.description());
+        product.setMinStockLevel(values.minStockLevel());
+        product.setSellingPrice(amount);
+        product.setActive(true);
+        var now = time.now();
+        product.setCreatedAt(now);
+        product.setUpdatedAt(now);
+        var saved = save(product);
+        inventory.initializeForNewProduct(saved);
+        return response(saved);
     }
 
     @Transactional
@@ -117,13 +148,23 @@ public class ProductService {
     }
 
     private Category activeCategory(long id) {
+        discardCachedSnapshot(Category.class, id);
         var category = categories.findForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "The category was not found."));
         if (!Boolean.TRUE.equals(category.getActive())) throw conflict("The selected category is inactive.");
         return category;
     }
 
-    private Product locked(long id) { return products.findForUpdate(id).orElseThrow(ProductService::notFound); }
+    private Product locked(long id) {
+        discardCachedSnapshot(Product.class, id);
+        return products.findForUpdate(id).orElseThrow(ProductService::notFound);
+    }
+
+    private void discardCachedSnapshot(Class<?> type, long id) {
+        // A subsequent locking query must hydrate from the database, not reuse the managed instance.
+        // getReference also works for a missing row; the locking query determines whether it exists.
+        entities.detach(entities.getReference(type, id));
+    }
 
     private void rejectDuplicate(String sku, Long ownId) {
         if (products.findBySku(sku).filter(other -> !Objects.equals(other.getId(), ownId)).isPresent()) {

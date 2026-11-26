@@ -4,7 +4,7 @@ import { NavigationIcon } from './NavigationIcon.jsx'
 export function Sidebar({ selectedId, onSelect, collapsed = false, permissions = [], canViewReports = false }) {
   const groups = navigationGroups.map(group => ({
     ...group,
-    items: group.items.filter(item => item.id === 'overview'
+    items: group.items.filter(item => item.id === 'overview' || item.id === 'account-security'
       || (item.id === 'reports' ? canViewReports : item.permission && permissions.includes(item.permission))),
   })).filter(group => group.items.length > 0)
   return <><div className="csm-sidebar-brand"><span className="brand-mark" aria-hidden="true">CSM</span>{!collapsed && <strong>Computer Store<br />Management</strong>}</div>

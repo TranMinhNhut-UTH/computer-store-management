@@ -18,8 +18,10 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static com.computerstore.computer_store_backend.identity.authorization.PermissionCode.*;
 
@@ -79,8 +81,11 @@ public class CustomerService {
     /** Called inside a Sales write transaction after Sales authorizes the operation. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void requireActiveForSale(long customerId) {
-        var customer = customers.findForUpdate(customerId).orElseThrow(CustomerService::notFound);
-        if (!Boolean.TRUE.equals(customer.getActive())) {
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            throw new IllegalTransactionStateException("Customer selection requires a Sales write transaction.");
+        }
+        if (customerId <= 0) throw invalid();
+        if (customers.lockActiveState(customerId).orElseThrow(CustomerService::notFound) != 1) {
             throw conflict("An inactive customer cannot be selected for a sale.");
         }
     }

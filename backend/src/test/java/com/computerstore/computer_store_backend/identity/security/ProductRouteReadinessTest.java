@@ -1,5 +1,7 @@
 package com.computerstore.computer_store_backend.identity.security;
 
+import com.computerstore.computer_store_backend.inventory.service.InventoryLifecycleService;
+
 import com.computerstore.computer_store_backend.catalog.controller.ProductController;
 import com.computerstore.computer_store_backend.catalog.entity.Category;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
@@ -34,6 +36,7 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -49,6 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** Runs the released filter rules with the real actor, resolver, policy and Product service. */
 @SpringJUnitConfig(ProductRouteReadinessTest.ReleaseFixture.class)
 @WebAppConfiguration
+@TestPropertySource(properties = "csm.product-creation.enabled=false")
 class ProductRouteReadinessTest {
     private static final String BASE = "/api/v1/products";
     private static final String INFO = """
@@ -56,7 +60,8 @@ class ProductRouteReadinessTest {
             """;
     private static final String CREATE = "{\"information\":" + INFO + ",\"sellingPrice\":\"100\"}";
     private static final String PRICE = "{\"sellingPrice\":\"200\"}";
-    private static final EmployeePrincipal PRINCIPAL = new EmployeePrincipal(42L, "fixture", null, true);
+    private static final EmployeePrincipal PRINCIPAL =
+            new EmployeePrincipal(42L, "fixture", null, true, 0L).forSession(java.time.Instant.now());
 
     @Autowired WebApplicationContext context;
     @Autowired AppUserRepository users;
@@ -144,7 +149,7 @@ class ProductRouteReadinessTest {
         verifyNoInteractions(products, categories);
     }
 
-    @Test void managerReachesAllOperationsButCreateDoesNotWriteWithoutInventory() throws Exception {
+    @Test void explicitlyDisabledCreateIsNotAdvertisedAndOtherWritesRemainAvailable() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value("1"))
@@ -182,12 +187,13 @@ class ProductRouteReadinessTest {
                 .andExpect(jsonPath("$.allowedActions").value(org.hamcrest.Matchers.contains("PRODUCT_UPDATE")));
     }
 
-    @Test void missingAndInvalidCsrfDenyEveryMutationBeforeActorOrPersistence() throws Exception {
+    @Test void missingAndInvalidCsrfDenyEveryMutationBeforeRoleResolutionOrPersistence() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL))).andExpect(status().isForbidden());
         for (var write : writes()) mvc.perform(write.with(user(PRINCIPAL)).with(csrf().useInvalidToken()))
                 .andExpect(status().isForbidden());
-        verifyNoInteractions(users, entities, products, categories);
+        verify(users, times(8)).findById(42L); // Session version is checked before CSRF.
+        verifyNoInteractions(entities, products, categories);
     }
 
     @Test void releaseDoesNotOpenUnlistedRoutes() throws Exception {
@@ -196,7 +202,7 @@ class ProductRouteReadinessTest {
                 get(BASE + "/1/price"), get("/api/v1/inventory"), get("/api/v1/purchases"))) {
             mvc.perform(request.with(user(PRINCIPAL)).with(csrf())).andExpect(status().isForbidden());
         }
-        verifyNoInteractions(users, entities, products, categories);
+        verifyNoInteractions(entities, products, categories);
     }
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
@@ -204,6 +210,9 @@ class ProductRouteReadinessTest {
             ProductController.class, ProductService.class, GlobalExceptionHandler.class,
             CurrentActorService.class, RoleResolutionService.class, AuthorizationService.class, PermissionPolicy.class})
     static class ReleaseFixture {
+        @Bean InventoryLifecycleService inventory() {
+            return mock(InventoryLifecycleService.class);
+        }
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
         @Bean EntityManager entities() { return mock(EntityManager.class); }
         @Bean ProductRepository products() { return mock(ProductRepository.class); }

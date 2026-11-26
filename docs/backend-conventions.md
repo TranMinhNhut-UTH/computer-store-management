@@ -30,7 +30,11 @@ Cookie dùng Secure khi chạy HTTPS; SameSite, domain, path và ngoại lệ de
 
 **Lý do:** hỗ trợ logout/revocation trực tiếp và không cần thêm cơ chế JWT khi chưa có nhu cầu cụ thể. **Phạm vi:** identity, mọi API được bảo vệ và frontend.
 
-**PENDING:** phê duyệt session hay giải pháp khác; session idle/absolute timeout, concurrent sessions; deployment cùng/khác origin; cấu hình cookie Secure/SameSite/domain/path; CSRF token exchange và vòng đời token; allowlist CORS; cách vô hiệu phiên khi khóa/đổi quyền; quy trình bootstrap Admin một lần, ai thực hiện và cách cấp secret an toàn. Chưa chọn timeout hoặc cơ chế bootstrap cụ thể.
+**APPROVED — P01 V1:** Quyết định mới của người vận hành trong task “P01 Session Revocation V1”. Khóa tài khoản hoặc thay đổi tập vai trò làm mất hiệu lực mọi phiên trước đó sau khi transaction commit. Mở khóa không phục hồi phiên. Logout hủy phiên hiện tại và giữ CSRF. Nâng schema bằng V12 theo [runbook](session-revocation-rollout.md). Phê duyệt mới trong task Employee Change Password V1 bổ sung thu hồi mọi phiên sau khi đổi mật khẩu thành công.
+
+**APPROVED — Session Lifecycle Security V1:** Người vận hành phê duyệt riêng thời hạn 30 phút không hoạt động và tối đa 8 giờ sau đăng nhập thành công. Backend thực thi cả hai giới hạn; phiên hết hạn cần đăng nhập lại, không gửi lại request đã bị từ chối. V1 không giới hạn số phiên đồng thời.
+
+**PENDING:** deployment cùng/khác origin; cấu hình cookie Secure/SameSite/domain/path; CSRF token exchange và vòng đời token; allowlist CORS; quy trình bootstrap Admin một lần, ai thực hiện và cách cấp secret an toàn.
 
 ## B. Authorization
 
@@ -145,7 +149,7 @@ Inventory.version do Hibernate quản lý; Service không tự tăng. Cập nh�
 
 **PENDING:** lock order liên module đầy đủ, đặc biệt use case chạm order + return + payment + stocktake/adjustment; loại khóa ở từng query và phạm vi khóa dữ liệu master active; transaction ownership và xử lý inventory row chưa tồn tại. Thứ tự nền tảng trong design không thay thế danh sách lock cụ thể cần nhóm duyệt cho từng workflow. Không tự chốt total order giữa nhiều loại chứng từ trong tài liệu này.
 
-**PROPOSED — inventory row lifecycle:** tạo inventory số dư 0 cùng transaction tạo Product để đáp ứng invariant mỗi product có một số dư; khi chứng từ gặp thiếu inventory row, báo lỗi integrity thay vì tự sửa âm thầm. Phương án lazy-create cần xử lý race/UNIQUE riêng nếu được chọn. Cả cơ chế tạo row và cách báo lỗi hiện còn PENDING; không thêm cột/bảng hoặc sửa Entity bằng tài liệu này.
+**APPROVED — Product Create V1 (P08/DEP-001):** chủ dự án duyệt tạo đúng một dòng inventory số dư 0 trong cùng transaction tạo Product. Lỗi ở một trong hai lần ghi làm rollback cả transaction. Không ghi movement khi khởi tạo, không lazy-create hay tự sửa dòng thiếu. Mã lỗi cụ thể và các quy tắc P08 khác của luồng chứng từ vẫn chờ chốt.
 
 ## H. Idempotency và retry
 
@@ -177,7 +181,7 @@ Inventory.version do Hibernate quản lý; Service không tự tăng. Cập nh�
 
 | Mã | PENDING | Cần chốt trước |
 |---|---|---|
-| P01 | Session, timeout, expiration/concurrent sessions và khóa tài khoản đang có phiên | Authentication implementation |
+| P01 | V1 được phê duyệt riêng: thu hồi tất cả phiên khi khóa hoặc đổi tập vai trò; mở khóa yêu cầu đăng nhập lại. Timeout và số phiên đồng thời còn PENDING. | IAM-003 / IAM-005 |
 | P02 | Cookie deployment, origin/HTTPS, CORS và CSRF exchange cụ thể | Frontend authentication integration |
 | P03 | Permission catalog, role mapping, cập nhật quyền trong phiên | API authorization |
 | P04 | Admin bootstrap an toàn và người thực hiện | Sử dụng hệ thống có phân quyền |

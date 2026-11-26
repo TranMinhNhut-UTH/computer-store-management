@@ -103,6 +103,22 @@ class EmployeeAuthenticationTest {
                 UsernamePasswordAuthenticationToken.unauthenticated("missing", rawPassword)));
     }
 
+    @Test void validatesUtf8BytesBeforeLookupAndAuthenticatesExactBoundaryPasswords() {
+        var provider = provider();
+        for (String invalid : new String[]{"A".repeat(73), "\u00e9".repeat(37),
+                "\uD83D\uDE00".repeat(18) + "a", new String(new char[]{'a', 0xd800})}) {
+            var failure = assertThrows(BadCredentialsException.class, () -> provider.authenticate(token(invalid)));
+            assertEquals("Invalid credentials.", failure.getMessage());
+        }
+        verifyNoInteractions(repository);
+
+        for (String allowed : new String[]{" " + "A".repeat(70) + " ", "\u00e9".repeat(36), "\uD83D\uDE00".repeat(18)}) {
+            assertEquals(72, allowed.getBytes(StandardCharsets.UTF_8).length);
+            when(user.getPasswordHash()).thenReturn(encoder.encode(allowed));
+            assertTrue(provider.authenticate(token(allowed)).isAuthenticated());
+        }
+    }
+
     @Test void successfulAuthenticationErasesHashAndTokenCredentialsEvenWithoutManager() throws Exception {
         var authenticated = provider().authenticate(token(rawPassword));
         assertTrue(authenticated.isAuthenticated());

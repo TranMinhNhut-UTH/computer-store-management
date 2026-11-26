@@ -70,8 +70,8 @@ class CustomerSecurityTest {
         when(employee.getActive()).thenReturn(true);
         when(users.findByUsername("employee")).thenReturn(Optional.of(employee));
         when(users.findById(42L)).thenReturn(Optional.of(employee));
-        principal = new EmployeeUserDetailsService(users).loadUserByUsername("employee");
-        principal.eraseCredentials();
+        principal = new EmployeeUserDetailsService(users).loadUserByUsername("employee")
+                .forSession(java.time.Instant.now());
         clearInvocations(users);
         when(customers.search(isNull(), isNull(), any())).thenReturn(new PageImpl<>(List.of(customer())));
         when(customers.findById(7L)).thenReturn(Optional.of(customer()));

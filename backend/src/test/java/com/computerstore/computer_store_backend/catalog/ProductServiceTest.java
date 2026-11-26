@@ -1,5 +1,7 @@
 package com.computerstore.computer_store_backend.catalog;
 
+import com.computerstore.computer_store_backend.inventory.service.InventoryLifecycleService;
+
 import com.computerstore.computer_store_backend.catalog.dto.request.*;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
 import com.computerstore.computer_store_backend.catalog.repository.CategoryRepository;
@@ -49,7 +51,9 @@ class ProductServiceTest {
 
     ProductServiceTest() {
         var target = new ProductService(products, categories, new PermissionPolicy(new AuthorizationService(roles)),
-                new UtcTimeProvider(Clock.fixed(Instant.parse("2026-11-22T02:00:00Z"), ZoneOffset.UTC)));
+                new UtcTimeProvider(Clock.fixed(Instant.parse("2026-11-22T02:00:00Z"), ZoneOffset.UTC)),
+                mock(jakarta.persistence.EntityManager.class),
+                mock(InventoryLifecycleService.class), false);
         var proxy = new ProxyFactory(target);
         proxy.setProxyTargetClass(true);
         var txInterceptor = new TransactionInterceptor();
@@ -124,14 +128,14 @@ class ProductServiceTest {
         verifyNoInteractions(products);
     }
 
-    @Test void createRequiresInitialPriceGrantAndFailsClosedWithoutInventoryContract() {
+    @Test void createRequiresInitialPriceGrantAndHonorsExplicitDisable() {
         grants("PRODUCT_CREATE");
         assertCode(ACCESS_DENIED, () -> service.create(new ProductCreateRequest(input, "1")));
         verifyNoInteractions(products, categories);
         grants("PRODUCT_CREATE", "PRODUCT_PRICE_UPDATE");
         var failure = assertThrows(BusinessException.class, () -> service.create(new ProductCreateRequest(input, "1")));
         assertEquals(BUSINESS_CONFLICT, failure.code());
-        assertTrue(failure.getMessage().contains("inventory initialization"));
+        assertEquals("Product creation is currently disabled.", failure.getMessage());
         verify(products, never()).saveAndFlush(any());
         verify(tx, times(2)).rollback(transaction);
         verify(tx, never()).commit(any());

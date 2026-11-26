@@ -1,5 +1,6 @@
 package com.computerstore.computer_store_backend.identity.security;
 
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -13,6 +14,14 @@ public final class EmployeeAuthenticationProvider extends DaoAuthenticationProvi
         super(users);
         setPasswordEncoder(encoder);
         setHideUserNotFoundExceptions(true);
+    }
+
+    @Override
+    public Authentication authenticate(Authentication authentication) {
+        if (!(authentication.getCredentials() instanceof CharSequence password) || !BcryptPasswordInput.isValid(password)) {
+            throw new BadCredentialsException("Invalid credentials.");
+        }
+        return super.authenticate(authentication);
     }
 
     @Override

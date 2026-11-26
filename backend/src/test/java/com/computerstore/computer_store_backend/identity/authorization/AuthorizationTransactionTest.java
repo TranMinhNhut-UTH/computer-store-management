@@ -60,6 +60,7 @@ class AuthorizationTransactionTest {
         var principal = mock(EmployeePrincipal.class);
         when(principal.getUserId()).thenReturn(42L); when(principal.getUsername()).thenReturn("employee");
         when(principal.isEnabled()).thenReturn(true);
+        when(principal.getSessionVersion()).thenReturn(0L);
         SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of()));
     }
 
@@ -84,8 +85,10 @@ class AuthorizationTransactionTest {
             @SuppressWarnings("unchecked") TypedQuery<String> permissions = mock(TypedQuery.class);
             when(entities.createQuery(RoleResolutionService.ROLES_QUERY, String.class)).thenReturn(roles);
             when(entities.createQuery(RoleResolutionService.PERMISSIONS_QUERY, String.class)).thenReturn(permissions);
+            when(roles.setParameter("sessionVersion", 0L)).thenReturn(roles);
             when(roles.setParameter("userId", 42L)).thenReturn(roles);
             when(roles.getResultList()).thenAnswer(invocation -> { assertTransaction(transactions.expectedReadOnly); return List.of("MANAGER"); });
+            when(permissions.setParameter("sessionVersion", 0L)).thenReturn(permissions);
             when(permissions.setParameter("userId", 42L)).thenReturn(permissions);
             when(permissions.setParameter(eq("roleCodes"), any())).thenReturn(permissions);
             when(permissions.getResultList()).thenAnswer(invocation -> { assertTransaction(transactions.expectedReadOnly); return List.of("FIXTURE_PERMISSION"); });

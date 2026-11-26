@@ -20,6 +20,8 @@ Deactivation takes a write lock on the Supplier row before checking for open DRA
 
 Purchasing owns its transactions. Draft creation, supplier reassignment, and confirmation must lock and recheck the relevant Supplier rows inside the write transaction. Lock suppliers in ascending ID order when more than one is involved, before locking Purchase and Inventory rows. If Purchasing reads a draft before acquiring those locks to learn the supplier ID, re-read the locked draft and confirm its supplier and state before writing. Stop or restart the transaction if either changed. Never treat the UI selection or an earlier nonlocking read as evidence that the supplier is still active.
 
+After authorizing the Purchasing operation, call `SupplierService.requireActiveForPurchase(long supplierId, Long previousSupplierId)` inside its write transaction. Pass `null` for a new draft or confirmation, and the existing Supplier ID for reassignment. The method locks distinct IDs in ascending order until the caller commits or rolls back. Missing rows return 404. An inactive target returns 409. The previous Supplier may be inactive when moving the draft away. Revalidate the draft after locking it as described above.
+
 The disposable MySQL test exercised both orderings using separate JDBC transactions. A Purchasing transaction waiting behind deactivation saw the supplier become inactive. Deactivation waiting behind draft creation saw the newly committed draft. TV2 still needs to implement and verify these checks in the Purchasing use cases.
 
 ## Permission rollout readiness

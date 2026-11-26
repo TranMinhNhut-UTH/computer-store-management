@@ -1,6 +1,6 @@
 # Basic Reports V1
 
-`RPT-001` delivers the catalog and partner overview at `/reports`. It consolidates the same records and active-status filters already available through the approved list APIs. The overview does not query transactions, stock balances, customer records beyond aggregate counts, or contact fields.
+`RPT-001` delivers the catalog and partner overview at `/reports`. It consolidates the same records and active-status filters already available through the approved list APIs. Totals and the Product-by-Category breakdown use a single database statement, so concurrent writes cannot put them on different snapshots. The overview does not query transactions, stock balances, customer records beyond aggregate counts, or contact fields.
 
 | Method and path | Success |
 |---|---|

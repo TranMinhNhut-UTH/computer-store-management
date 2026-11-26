@@ -26,6 +26,11 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     @Query("select s from Supplier s where s.id = :id")
     Optional<Supplier> findForUpdate(@Param("id") Long id);
 
+    // Read the database value rather than a Supplier already managed by the caller's persistence context.
+    @Query(value = "select case when is_active = 1 then 1 else 0 end from supplier where id = :id for update",
+            nativeQuery = true)
+    Optional<Integer> lockActiveState(@Param("id") long id);
+
     // Run after locking the supplier. The locking read sees drafts committed before that lock.
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("select p from Purchase p where p.supplier.id = :id and p.status = :status")

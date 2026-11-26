@@ -147,7 +147,7 @@ Trích dẫn trực tiếp từ nguồn, áp dụng nguyên văn cho FND-008:
 | # | Đề xuất | Lý do |
 |---|---|---|
 | P-A | `InventoryOperationsService` là 1 Spring bean duy nhất (không interface+Impl bắt buộc theo quy ước I), `@Transactional(propagation = REQUIRED)` ở method, tham gia transaction của Service gọi nó — không `REQUIRES_NEW` | Khớp backend-conventions.md §F: *"Không dùng REQUIRES_NEW cho movement"* |
-| P-B | Row lifecycle của `inventory`: tạo kèm `quantity_on_hand = 0` **trong cùng transaction** tạo `Product` | Khớp backend-conventions.md §G PROPOSED; vẫn PENDING chính thức — cần `ProductService` (TV1) phối hợp implement |
+| P-B | Row lifecycle của `inventory`: tạo kèm `quantity_on_hand = 0` **trong cùng transaction** tạo `Product` | Chủ dự án đã duyệt cho Product Create V1. `ProductService` sở hữu transaction và gọi `InventoryLifecycleService`. Xem backend-conventions.md §G. |
 | P-C | Khi gặp `InventoryRowNotFoundException` (vi phạm invariant P-B) → ném lỗi integrity rõ ràng, **không** tự tạo ngầm | Tránh che giấu lỗi dữ liệu, đúng tinh thần backend-conventions.md §G |
 | P-D | Mã lỗi nghiệp vụ: `INSUFFICIENT_STOCK`, `SKU_LOCKED_BY_STOCKTAKE`, `INVENTORY_ROW_NOT_FOUND` — theo đúng style `DOCUMENT_ALREADY_CONFIRMED` đã đề xuất ở §C | Đồng bộ error catalog toàn backend, chờ duyệt cùng P05 |
 | P-E | Retry: không retry trong `InventoryOperationsService` — nếu có, thuộc lớp điều phối phía trên (Controller/Service gọi), ngoài phạm vi tài liệu này | Khớp backend-conventions.md §H, P09 còn PENDING |
@@ -159,8 +159,7 @@ Trích dẫn trực tiếp từ nguồn, áp dụng nguyên văn cho FND-008:
 1. **Transaction owner chính xác**: `InventoryOperationsService` có là class riêng trong package
    `inventory.service` hay nằm trong 1 `InventoryTransactionRecorder` tách biệt khỏi
    `InventoryBalanceService` (đọc/cảnh báo tồn thấp)? — chưa chốt tên class/package cụ thể.
-2. **DEP-001**: ai (TV1 hay TV2) viết đoạn code tạo `inventory` row khi tạo `Product` — P-B mới
-   là đề xuất, chưa phải thỏa thuận triển khai.
+2. **DEP-001**: đã triển khai và kiểm thử cho Product Create V1 theo P-B. Triển khai môi trường và smoke test live được theo dõi riêng.
 3. **Clock UTC (DEP-004/P06)**: `occurredAt` hiện chưa có nguồn chính thức — chưa thể code thật
    cho đến khi có `Clock` bean dùng chung.
 4. **Current actor (DEP-002/P03)**: cách lấy `AppUser actor` từ principal chưa có cơ chế

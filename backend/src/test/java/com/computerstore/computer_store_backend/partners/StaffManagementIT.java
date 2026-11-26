@@ -2,6 +2,7 @@ package com.computerstore.computer_store_backend.partners;
 
 import com.computerstore.computer_store_backend.ComputerStoreBackendApplication;
 import com.computerstore.computer_store_backend.operations.staff.v1.StaffPermissionMigrationRunner;
+import com.computerstore.computer_store_backend.operations.session.v1.SessionVersionMigrationRunner;
 import com.computerstore.computer_store_backend.partners.SupplierPermissionRolloutIT.DisposableMysql;
 import java.net.CookieManager;
 import java.net.URI;
@@ -94,6 +95,22 @@ class StaffManagementIT {
                 SELECT CONCAT(version, ':', checksum, ':', success) FROM flyway_schema_history
                 WHERE version IN ('10','11') ORDER BY installed_rank
                 """, String.class));
+        var source = mysql.dataSource(ReportsOverviewIT.SCHEMA);
+        // An unexpected predecessor history must fail before touching the account schema.
+        db.update("UPDATE flyway_schema_history SET checksum = 0 WHERE version = '11'");
+        assertThrows(IllegalStateException.class, () -> ReflectionTestUtils.invokeMethod(
+                SessionVersionMigrationRunner.class, "apply", source, ReportsOverviewIT.SCHEMA));
+        assertEquals(0, db.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = 'app_user' AND COLUMN_NAME = 'session_version'
+                """, Integer.class));
+        db.update("UPDATE flyway_schema_history SET checksum = 792526816 WHERE version = '11'");
+        ReflectionTestUtils.invokeMethod(SessionVersionMigrationRunner.class, "apply", source, ReportsOverviewIT.SCHEMA);
+        assertEquals(-710087236, db.queryForObject(
+                "SELECT checksum FROM flyway_schema_history WHERE version = '12' AND success = TRUE", Integer.class));
+        assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM app_user WHERE session_version <> 0", Integer.class));
+        assertThrows(IllegalStateException.class, () -> ReflectionTestUtils.invokeMethod(
+                SessionVersionMigrationRunner.class, "apply", source, ReportsOverviewIT.SCHEMA));
         return db;
     }
 
@@ -182,12 +199,35 @@ class StaffManagementIT {
 
         var staff = new Session(port);
         staff.login("new.staff");
+        var secondStaffSession = new Session(port);
+        secondStaffSession.login("new.staff");
+        String me = "/api/v1/auth/me";
+        expect(200, staff.read(me));
+        expect(403, staff.read(STAFF));
         expect(400, admin.write("PUT", STAFF + "/" + id, Map.of("fullName", "Fixture", "active", false)));
         var updated = expect(200, admin.write("PUT", STAFF + "/" + id, Map.of("fullName", "Updated fixture")));
         assertEquals("Updated fixture", updated.get("fullName").asString());
         assertTrue(updated.get("active").asBoolean());
-        var assigned = expect(200, admin.write("PUT", STAFF + "/" + id + "/roles", Map.of("roles", List.of("MANAGER", "SALES_STAFF"))));
-        assertEquals(2, assigned.get("roles").size());
+        expect(200, staff.read(me));
+        var employeePath = STAFF + "/" + id;
+        var changeRoles = Map.of("roles", List.of("ADMIN", "SALES_STAFF"));
+        db.execute("""
+                CREATE TRIGGER fixture_fail_revision BEFORE UPDATE ON app_user FOR EACH ROW
+                BEGIN
+                    IF NEW.session_version <> OLD.session_version THEN
+                        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback';
+                    END IF;
+                END
+                """);
+        try {
+            expect(500, admin.write("PUT", employeePath + "/roles", changeRoles));
+            expect(500, admin.write("POST", employeePath + "/lock", null));
+            expect(200, staff.read(me));
+            expect(403, staff.read(STAFF));
+            assertEquals(1, expect(200, admin.read(employeePath)).get("roles").size());
+        } finally {
+            db.execute("DROP TRIGGER fixture_fail_revision");
+        }
         expect(403, admin.write("POST", STAFF + "/" + adminId + "/lock", null));
         expect(403, admin.write("PUT", STAFF + "/" + adminId + "/roles", Map.of("roles", List.of("MANAGER"))));
         assertFalse(expect(200, admin.write("POST", STAFF + "/" + id + "/lock", null)).get("active").asBoolean());
@@ -195,8 +235,29 @@ class StaffManagementIT {
         expect(401, staff.read("/api/v1/auth/ui-capabilities"));
         expect(401, new Session(port).write("POST", "/api/v1/auth/login", Map.of("username", "new.staff", "password", PASSWORD)));
         assertTrue(expect(200, admin.write("POST", STAFF + "/" + id + "/unlock", null)).get("active").asBoolean());
-        expect(200, staff.read("/api/v1/auth/me"));
-        new Session(port).login("new.staff");
+        expect(401, staff.read(me));
+        expect(401, secondStaffSession.read(me));
+        expect(401, staff.send("PUT", employeePath, Map.of("fullName", "rejected"), null));
+        expect(200, admin.read(me));
+        var fresh = new Session(port);
+        fresh.login("new.staff");
+        expect(200, fresh.read(me));
+        expect(403, fresh.read(STAFF));
+        var assigned = expect(200, admin.write("PUT", employeePath + "/roles", changeRoles));
+        assertEquals(2, assigned.get("roles").size());
+        expect(401, fresh.read(me));
+        expect(401, fresh.read(STAFF));
+        expect(401, staff.read(STAFF));
+        var authorized = new Session(port);
+        authorized.login("new.staff");
+        expect(200, authorized.read(STAFF));
+        expect(200, admin.write("PUT", employeePath + "/roles", changeRoles));
+        expect(200, authorized.read(me)); // Assigning the identical role set does not revoke.
+        expect(403, authorized.send("POST", "/api/v1/auth/logout", null, null));
+        expect(204, authorized.write("POST", "/api/v1/auth/logout", null));
+        expect(401, authorized.read(me));
+        // Restore one non-admin fixture so the final two-ADMIN race checks the last-active invariant.
+        expect(200, admin.write("PUT", employeePath + "/roles", Map.of("roles", List.of("SALES_STAFF"))));
         expect(403, admin.write("DELETE", STAFF + "/" + id, null));
         assertEquals("new.staff", expect(200, admin.read(STAFF + "/" + id)).get("username").asString());
 
@@ -216,13 +277,17 @@ class StaffManagementIT {
         CompletableFuture.allOf(one, two).get(15, TimeUnit.SECONDS);
         var statuses = List.of(one.join().statusCode(), two.join().statusCode()).stream().sorted().toList();
         assertTrue(statuses.equals(List.of(200, 401)) || statuses.equals(List.of(200, 403)), statuses.toString());
+        var winner = one.join().statusCode() == 200 ? first : second;
+        var revoked = one.join().statusCode() == 200 ? second : first;
+        expect(200, winner.read("/api/v1/auth/me"));
+        expect(401, revoked.read("/api/v1/auth/me"));
         assertEquals(1, db.queryForObject("""
                 SELECT COUNT(*) FROM app_user u JOIN user_role ur ON ur.user_id=u.id
                 JOIN app_role r ON r.id=ur.role_id WHERE r.code='ADMIN' AND u.is_active=TRUE
                 """, Integer.class));
     }
 
-    private static void fixture(JdbcTemplate db, String username, String role) {
+    static void fixture(JdbcTemplate db, String username, String role) {
         db.update("INSERT INTO app_user (username,password_hash,full_name,created_at,updated_at) VALUES (?,?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))",
                 username, new BCryptPasswordEncoder().encode(PASSWORD), username);
         db.update("INSERT INTO user_role (user_id,role_id,assigned_at) SELECT u.id,r.id,UTC_TIMESTAMP(6) FROM app_user u,app_role r WHERE u.username=? AND r.code=?",
@@ -244,18 +309,22 @@ class StaffManagementIT {
         return db.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
     }
 
-    private static JsonNode expect(int status, HttpResponse<String> response) {
+    static JsonNode expect(int status, HttpResponse<String> response) {
         assertEquals(status, response.statusCode(), "Unexpected HTTP response");
         return response.body().isEmpty() ? null : JSON.readTree(response.body());
     }
 
-    private static final class Session {
+    static final class Session {
         final HttpClient client = HttpClient.newBuilder().cookieHandler(new CookieManager()).connectTimeout(Duration.ofSeconds(5)).build();
         final String base;
         Session(int port) { base = "http://127.0.0.1:" + port; }
 
         JsonNode login(String username) throws Exception {
-            return expect(200, write("POST", "/api/v1/auth/login", Map.of("username", username, "password", PASSWORD)));
+            return login(username, PASSWORD);
+        }
+
+        JsonNode login(String username, String password) throws Exception {
+            return expect(200, write("POST", "/api/v1/auth/login", Map.of("username", username, "password", password)));
         }
 
         JsonNode csrf() throws Exception { return expect(200, read("/api/v1/auth/csrf")); }

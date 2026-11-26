@@ -22,4 +22,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Customer s where s.id = :id")
     Optional<Customer> findForUpdate(@Param("id") Long id);
+
+    @Query(value = "select case when is_active = 1 then 1 else 0 end from customer where id = :id for update",
+            nativeQuery = true)
+    Optional<Integer> lockActiveState(@Param("id") long id);
 }

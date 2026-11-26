@@ -3,10 +3,10 @@ import { after, before, beforeEach, afterEach, test } from 'node:test'
 import { JSDOM } from 'jsdom'
 import { createServer } from 'vite'
 import { createElement, act } from 'react'
-import { createRoot } from 'react-dom/client'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
 let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
+let createRoot, passwordStatus
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -15,6 +15,7 @@ before(async () => {
   for (const name of ['window', 'document', 'HTMLElement', 'localStorage']) {
     Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] })
   }
+  ;({ createRoot } = await import('react-dom/client'))
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   globalThis.requestAnimationFrame = callback => setTimeout(callback, 0)
   window.matchMedia = query => {
@@ -42,6 +43,11 @@ before(async () => {
       return Response.json({ userId: '42', username: 'test-employee' })
     }
     if (url.endsWith('/logout')) { authenticated = false; return new Response(null, { status: 204 }) }
+    if (url.endsWith('/change-password')) {
+      if (passwordStatus !== 204) return Response.json({ code: 'VALIDATION_ERROR' }, { status: passwordStatus })
+      authenticated = false
+      return new Response(null, { status: 204 })
+    }
     if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
@@ -66,6 +72,7 @@ beforeEach(() => {
   authenticated = false
   categoryStatus = 403
   loginAccepted = true
+  passwordStatus = 204
   reportAccess = false
   capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
@@ -92,6 +99,80 @@ async function resizeViewport(width) {
     await new Promise(resolve => setTimeout(resolve, 20))
   })
 }
+
+async function fillPassword(name, value) {
+  const input = container.querySelector(`input[name="${name}"]`)
+  assert.ok(input)
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, value)
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+}
+
+async function submitPassword() {
+  await act(async () => container.querySelector('main form').dispatchEvent(
+    new window.Event('submit', { bubbles: true, cancelable: true })))
+}
+
+test('Account Security works without Staff grants and signs out only after a successful change', async () => {
+  authenticated = true
+  capabilities = []
+  await render()
+  assert.equal(container.querySelector('[data-nav-id="employees"]'), null)
+  await click(container.querySelector('[data-nav-id="account-security"]'))
+  assert.equal(window.location.pathname, '/account-security')
+  assert.equal(container.querySelector('#page-title').textContent, 'Bảo mật tài khoản')
+  const current = ' fixture password '
+  const next = ' ' + 'é'.repeat(35) + ' '
+  await fillPassword('currentPassword', current)
+  await fillPassword('newPassword', next + 'x')
+  await fillPassword('confirmation', 'different')
+  await submitPassword()
+  assert.equal(container.querySelector('[name="newPassword"]').getAttribute('aria-invalid'), 'true')
+  assert.equal(container.querySelector('[name="confirmation"]').getAttribute('aria-invalid'), 'true')
+  assert.equal(requests.filter(request => request.url.endsWith('/change-password')).length, 0)
+
+  passwordStatus = 400
+  await fillPassword('newPassword', next)
+  await fillPassword('confirmation', next)
+  await submitPassword()
+  assert.match(container.querySelector('main [role="alert"]').textContent, /Kiểm tra mật khẩu hiện tại/)
+  assert.ok(container.querySelector('[data-app-shell]'))
+  assert.equal(container.querySelector('[name="currentPassword"]').value, '')
+
+  passwordStatus = 204
+  await fillPassword('currentPassword', current)
+  await fillPassword('newPassword', next)
+  await fillPassword('confirmation', next)
+  await submitPassword()
+  const writes = requests.filter(request => request.url.endsWith('/change-password'))
+  assert.equal(writes.length, 2) // Each write corresponds to an explicit submit.
+  assert.deepEqual(JSON.parse(writes[1].options.body), { currentPassword: current, newPassword: next })
+  assert.equal(writes[1].options.headers['X-CSRF-TOKEN'], 'test-token')
+  assert.equal(writes[1].options.credentials, 'same-origin')
+  assert.equal(container.querySelector('[data-app-shell]'), null)
+  assert.match(container.querySelector('[role="status"]').textContent, /Đã đổi mật khẩu/)
+  assert.equal(document.activeElement.id, 'username')
+  assert.equal(window.location.pathname, '/account-security')
+  assert.equal(requests.some(request => /\/auth\/(login|logout)$/.test(request.url)), false)
+  assert.equal(Object.values(localStorage).some(value => value.includes(next) || value.includes(current)), false)
+})
+
+test('Account Security on a mobile route uses standard session recovery on a rejected change', async () => {
+  authenticated = true
+  viewportWidth = 375
+  passwordStatus = 401
+  window.history.replaceState(null, '', '/account-security')
+  await render()
+  assert.equal(container.querySelector('[data-app-shell]').dataset.viewport, 'mobile')
+  await fillPassword('currentPassword', 'fixture current')
+  await fillPassword('newPassword', 'fixture new')
+  await fillPassword('confirmation', 'fixture new')
+  await submitPassword()
+  assert.match(container.querySelector('#auth-error').textContent, /Phiên đăng nhập đã kết thúc/)
+  assert.equal(container.querySelector('[data-app-shell]'), null)
+  assert.equal(requests.filter(request => request.url.endsWith('/change-password')).length, 1)
+})
 
 test('anonymous direct Category URL renders Login without requesting categories', async () => {
   window.history.replaceState(null, '', '/categories')
@@ -179,7 +260,7 @@ test('sidebar uses server read grants and unfinished modules are absent from nav
   window.history.replaceState(null, '', '/inventory')
   await render()
   assert.ok(container.querySelector('.csm-username').textContent.includes('test-employee'))
-  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'categories', 'products'])
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'categories', 'products', 'account-security'])
   assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
   assert.match(container.querySelector('.csm-empty').textContent, /Chưa|chưa/)
   assert.ok(requests.every(request => request.url.includes('/auth/') || request.url.endsWith('/reports/access')))
@@ -191,7 +272,7 @@ test('signed-in account without read grants sees only overview even if an action
   authenticated = true
   capabilities = ['CATEGORY_UPDATE']
   await render()
-  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview'])
+  assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'account-security'])
   assert.match(container.querySelector('main').textContent, /chưa có quyền/)
   assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
 })
@@ -291,8 +372,8 @@ test('desktop hamburger collapses and expands one sidebar, preserves selection a
   }
   await click(toggle)
   assert.equal(shell.classList.contains('csm-shell--collapsed'), false)
-  assert.equal(container.querySelectorAll('[data-nav-id]').length, 6)
-  assert.equal(container.querySelectorAll('.csm-nav-label').length, 6)
+  assert.equal(container.querySelectorAll('[data-nav-id]').length, 7)
+  assert.equal(container.querySelectorAll('.csm-nav-label').length, 7)
   assert.equal(container.querySelector('nav').textContent.includes('Chưa triển khai'), false)
   assert.equal(container.querySelector('dialog'), null)
   assert.equal(document.body.style.overflow, '')

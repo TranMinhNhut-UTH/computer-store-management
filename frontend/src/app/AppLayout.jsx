@@ -13,6 +13,7 @@ import { SupplierPage } from '../features/suppliers/SupplierPage.jsx'
 import { CustomerPage } from '../features/customers/CustomerPage.jsx'
 import { StaffPage } from '../features/employees/StaffPage.jsx'
 import { ReportsPage } from '../features/reports/ReportsPage.jsx'
+import { AccountSecurityPage } from '../features/account/AccountSecurityPage.jsx'
 import { getUiCapabilities } from '../api/uiCapabilities.js'
 import { LoadingState } from '../components/ui/LoadingState.jsx'
 import { reportsClient } from '../api/reports.js'
@@ -35,7 +36,7 @@ function subscribeViewport(update) {
   return () => queries.forEach(query => query.removeEventListener('change', update))
 }
 
-export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
+export function AppLayout({ user, onLogout, onChangePassword, changingPassword, loggingOut, error, notice }) {
   const viewport = useSyncExternalStore(subscribeViewport, getViewport, () => 'mobile')
   const mobile = viewport === 'mobile'
   const [desktopCollapsed, setDesktopCollapsed] = useState(false)
@@ -117,10 +118,11 @@ export function AppLayout({ user, onLogout, loggingOut, error, notice }) {
     {mobile && <dialog ref={drawer} id="mobile-navigation" className="csm-drawer" aria-label="Điều hướng ứng dụng" onCancel={event => { event.preventDefault(); setDrawerOpen(false) }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setDrawerOpen(false) } }} onClick={event => { if (event.target === event.currentTarget) setDrawerOpen(false) }}>
       {drawerOpen && <div className="csm-drawer-content"><Button ref={closeButton} variant="secondary" className="csm-close-menu" onClick={() => setDrawerOpen(false)}>Đóng điều hướng</Button><Sidebar selectedId={selectedId} onSelect={select} permissions={permissions} canViewReports={canViewReports} /></div>}
     </dialog>}
-    <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} />
+    <div className="csm-shell-body"><Topbar title={current.label} username={user.username} menuOpen={mobile ? drawerOpen : !collapsed} menuIsDialog={mobile} onMenu={toggleNavigation} onLogout={onLogout} loggingOut={loggingOut} logoutDisabled={changingPassword} />
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">
         {error && <div className="message message-error" role="alert">{error}</div>}{notice && <p className="message message-success" role="status">{notice}</p>}
-        {BusinessPage ? <BusinessPage permissions={permissions} currentUserId={user.userId} /> : selectedId === 'overview' ? <>
+        {selectedId === 'account-security' ? <AccountSecurityPage onChangePassword={onChangePassword} disabled={changingPassword || loggingOut} />
+          : BusinessPage ? <BusinessPage permissions={permissions} currentUserId={user.userId} /> : selectedId === 'overview' ? <>
           <PageHeader title={current.label} />
           <Card aria-label={current.label}>
             {capabilities.loading ? <LoadingState label="Đang tải quyền truy cập…" />

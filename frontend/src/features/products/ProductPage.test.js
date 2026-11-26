@@ -40,10 +40,10 @@ after(async () => { await server.close(); dom.window.close() })
 
 const button = label => [...container.querySelectorAll('button')].find(item => item.textContent === label)
 const byLabel = label => container.querySelector(`button[aria-label="${label}"]`)
-async function render(allowedActions = [], permissions = []) {
+async function render(allowedActions = [], permissions = [], categoryApi = categories) {
   const list = client.list
   client.list = async (...args) => ({ ...await list(...args), allowedActions })
-  await act(async () => root.render(createElement(ProductPage, { client, categories, permissions })))
+  await act(async () => root.render(createElement(ProductPage, { client, categories: categoryApi, permissions })))
 }
 async function click(el) { assert.ok(el); await act(async () => el.click()) }
 async function change(selector, value) {
@@ -64,17 +64,18 @@ test('Product renders list and detail for read-only staff with write actions hid
   assert.match(container.querySelector('tbody').textContent, /9\.999\.999\.999\.999\.999\.999/)
   assert.match(container.querySelector('tbody').textContent, /13:45 22\/11\/2026/)
   for (const name of ['Sửa sản phẩm CPU', 'Đổi giá bán CPU', 'Ngừng kinh doanh CPU']) assert.equal(byLabel(name), null)
-  assert.equal(button('Xem biểu mẫu tạo'), undefined)
+  assert.equal(button('Tạo sản phẩm'), undefined)
   await click(byLabel('Xem sản phẩm CPU'))
   assert.match(container.querySelector('dialog').textContent, /Linh kiện.*Brand.*M1/s)
   assert.deepEqual(calls.at(-1), ['detail', product.id])
 })
 
 test('Product enables only the specific write action reported by the server', async () => {
-  await render(['PRODUCT_UPDATE'])
+  await render(['PRODUCT_UPDATE', 'PRODUCT_CREATE'])
   assert.equal(byLabel('Sửa sản phẩm CPU').disabled, false)
   assert.equal(byLabel('Đổi giá bán CPU'), null)
   assert.equal(byLabel('Ngừng kinh doanh CPU'), null)
+  assert.equal(button('Tạo sản phẩm'), undefined)
   assert.equal(container.querySelector('dialog'), null)
 })
 
@@ -94,16 +95,103 @@ test('Product search debounces and status filter applies immediately with pagina
   assert.deepEqual(calls.at(-1)[1], { q: '', active: '', page: 0, size: 20 })
 })
 
-test('Product creation form is inspectable but cannot submit without DEP-001', async () => {
+test('Product Create is hidden when the list omits the action, even with account grants', async () => {
   await render(allWrites, ['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
-  await click(button('Xem biểu mẫu tạo'))
-  assert.ok(container.querySelector('dialog [name=sku]'))
-  assert.ok(container.querySelector('dialog [name=sellingPrice]'))
-  assert.ok(container.querySelector('dialog select option[value="7"]'))
-  assert.match(container.querySelector('dialog').textContent, /DEP-001/)
-  assert.ok(button('Lưu sản phẩm').disabled)
+  assert.equal(button('Tạo sản phẩm'), undefined)
+  assert.equal(container.querySelector('dialog'), null)
+})
+
+test('Product Create needs both server actions, validates, and refreshes after saving', async () => {
+  let finish
+  let created = false
+  const saved = { ...product, id: '12', sku: 'NEW-SKU', name: 'Sản phẩm mới' }
+  const list = client.list
+  client.list = async query => {
+    const result = await list(query)
+    return created ? { ...result, items: [...result.items, saved] } : result
+  }
+  client.create = values => {
+    calls.push(['create', values])
+    return new Promise(resolve => { finish = resolve })
+  }
+  await render(['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
+  await click(button('Tạo sản phẩm'))
   await submit()
+  assert.equal(document.activeElement.name, 'sellingPrice')
   assert.equal(calls.some(([action]) => action === 'create'), false)
+
+  await change('[name=sku]', 'new-sku')
+  await change('[name=name]', 'Sản phẩm mới')
+  await change('[name=categoryId]', '7')
+  await change('[name=sellingPrice]', '9999999999999999999')
+  await submit()
+  assert.ok(button('Lưu sản phẩm').disabled)
+  assert.equal(calls.at(-1)[1].sellingPrice, '9999999999999999999')
+  await submit()
+  assert.equal(calls.filter(([action]) => action === 'create').length, 1)
+  created = true
+  await act(async () => finish(saved))
+  assert.equal(container.querySelector('dialog'), null)
+  assert.match(container.textContent, /Đã tạo sản phẩm với số dư tồn kho ban đầu bằng 0/)
+  assert.equal(calls.at(-1)[0], 'list')
+  assert.match(container.querySelector('tbody').textContent, /NEW-SKU.*Sản phẩm mới/)
+})
+
+test('Product Create keeps form input when a server field error or conflict is returned', async () => {
+  let error = { status: 400, fields: ['sku'] }
+  client.create = async () => { throw error }
+  await render(['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
+  await click(button('Tạo sản phẩm'))
+  await change('[name=sku]', 'duplicate')
+  await change('[name=name]', 'Sản phẩm mới')
+  await change('[name=categoryId]', '7')
+  await change('[name=sellingPrice]', '0')
+  await submit()
+  const input = container.querySelector('[name=sku]')
+  assert.equal(input.getAttribute('aria-invalid'), 'true')
+  error = { status: 409 }
+  await submit()
+  assert.match(container.querySelector('[role=alert]').textContent, /SKU đã tồn tại.*danh mục đã ngừng sử dụng/)
+  assert.equal(input.value, 'duplicate')
+  assert.equal(button('Lưu sản phẩm').disabled, false)
+})
+
+test('Product category lookup returns to an available page when the result shrinks', async () => {
+  const pages = []
+  const categoryApi = { async list({ page }) {
+    pages.push(page)
+    if (page === 1) return { items: [], totalPages: 1 }
+    return { items: [{ id: '8', code: 'NEW', name: 'Danh mục mới' }], totalPages: pages.length === 1 ? 2 : 1 }
+  } }
+  await render(['PRODUCT_UPDATE'], [], categoryApi)
+  await click(byLabel('Sửa sản phẩm CPU'))
+  await click(button('Danh mục sau'))
+  assert.deepEqual(pages, [0, 1, 0])
+  const picker = container.querySelector('#product-category')
+  assert.equal(picker.value, product.categoryId)
+  assert.ok(picker.querySelector('option[value="8"]'))
+  assert.equal(button('Danh mục sau'), undefined)
+})
+
+test('Product category lookup retries a transient failure without retrying a permission denial', async () => {
+  let status = 0
+  let attempts = 0
+  const categoryApi = { async list() {
+    attempts++
+    if (attempts === 1 || status === 403) throw { status }
+    return categories.list()
+  } }
+  await render(['PRODUCT_UPDATE'], [], categoryApi)
+  await click(byLabel('Sửa sản phẩm CPU'))
+  assert.match(container.querySelector('dialog [role=alert]').textContent, /Không thể kết nối/)
+  await click(button('Thử lại'))
+  assert.equal(attempts, 2)
+  assert.ok(container.querySelector('#product-category option[value="7"]'))
+  status = 403
+  await change('dialog input[maxlength="120"]', 'restricted')
+  assert.match(container.querySelector('dialog [role=alert]').textContent, /Truy cập bị từ chối/)
+  assert.equal(button('Thử lại'), undefined)
+  assert.equal(attempts, 3)
 })
 
 test('A superseded Product search cannot overwrite a newer empty result', async () => {
@@ -129,10 +217,15 @@ test('Product edit form leaves price in a separate command and preserves a 19-di
   assert.equal(container.querySelector('dialog'), null)
   await click(byLabel('Đổi giá bán CPU'))
   assert.equal(container.querySelector('dialog [name=sku]'), null)
-  await change('dialog [name=sellingPrice]', '1.25')
-  await submit()
-  assert.ok(container.querySelector('dialog [aria-invalid=true]'))
-  assert.equal(calls.some(([action]) => action === 'price'), false)
+  const priceField = container.querySelector('dialog [name=sellingPrice]')
+  assert.equal(priceField.hasAttribute('maxlength'), false)
+  for (const invalid of ['1.25', '1e6', '0001', '99999999999999999999']) {
+    await change('dialog [name=sellingPrice]', invalid)
+    await submit()
+    assert.equal(priceField.value, invalid)
+    assert.equal(priceField.getAttribute('aria-invalid'), 'true')
+    assert.equal(calls.some(([action]) => action === 'price'), false)
+  }
   await change('dialog [name=sellingPrice]', '9223372036854775808')
   await submit()
   assert.deepEqual(calls.find(([action]) => action === 'price'), ['price', product.id, '9223372036854775808'])

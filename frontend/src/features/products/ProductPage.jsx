@@ -18,7 +18,7 @@ import './products.css'
 
 const blank = { sku: '', name: '', categoryId: '', brandName: '', modelCode: '', description: '', minStockLevel: '0', sellingPrice: '' }
 const titles = { create: 'Tạo sản phẩm', detail: 'Chi tiết sản phẩm', edit: 'Sửa sản phẩm', price: 'Đổi giá bán', deactivate: 'Ngừng kinh doanh' }
-const permissionByAction = { edit: 'PRODUCT_UPDATE', price: 'PRODUCT_PRICE_UPDATE', deactivate: 'PRODUCT_DEACTIVATE' }
+const permissionByAction = { create: 'PRODUCT_CREATE', edit: 'PRODUCT_UPDATE', price: 'PRODUCT_PRICE_UPDATE', deactivate: 'PRODUCT_DEACTIVATE' }
 const digits = new Intl.NumberFormat('vi-VN')
 const money = value => `${digits.format(BigInt(value))} ₫`
 
@@ -29,7 +29,7 @@ function errorMessage(failure, action) {
     case 403: return 'Truy cập bị từ chối. Tài khoản hiện không có quyền thực hiện thao tác này.'
     case 404: return 'Không tìm thấy sản phẩm hoặc danh mục đã chọn.'
     case 409: return action === 'create'
-      ? 'Chưa thể tạo sản phẩm. Kiểm tra SKU, danh mục và điều kiện khởi tạo tồn kho.'
+      ? 'Chưa thể tạo sản phẩm. Kiểm tra SKU đã tồn tại, danh mục đã ngừng sử dụng hoặc chức năng tạo đang tạm tắt.'
       : 'Dữ liệu đang xung đột. Kiểm tra SKU hoặc trạng thái danh mục rồi thử lại.'
     case 0: return 'Không thể kết nối đến máy chủ.'
     default: return 'Chưa thể xử lý yêu cầu. Vui lòng thử lại.'
@@ -37,23 +37,37 @@ function errorMessage(failure, action) {
 }
 
 function CategoryPicker({ client, current, value, onChange, error }) {
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(0)
-  const [result, setResult] = useState(null)
-  const [failure, setFailure] = useState(null)
+  const [query, setQuery] = useState({ search: '', page: 0 })
+  const [attempt, retry] = useState(0)
+  const [settled, setSettled] = useState(null)
+  const { search, page } = query
+  const response = settled?.query === query && settled.attempt === attempt ? settled : null
+  const result = response?.result
+  const failure = response?.failure
+
   useEffect(() => {
     const controller = new AbortController()
-    setResult(null)
-    setFailure(null)
-    client.list({ active: 'true', q: search.trim(), page, size: 20 }, { signal: controller.signal }).then(data => {
-      if (!controller.signal.aborted) setResult(data)
-    }).catch(error => { if (!controller.signal.aborted) setFailure(error) })
+    const { search, page } = query
+    client.list({ active: 'true', q: search.trim(), page, size: 20 }, { signal: controller.signal }).then(result => {
+      if (controller.signal.aborted) return
+      if (page > 0 && page >= result.totalPages) {
+        setQuery(previous => previous === query ? { ...query, page: Math.max(0, result.totalPages - 1) } : previous)
+      } else {
+        setSettled({ query, attempt, result })
+      }
+    }).catch(failure => {
+      if (!controller.signal.aborted) setSettled({ query, attempt, failure })
+    })
     return () => controller.abort()
-  }, [client, search, page])
+  }, [client, query, attempt])
+
+  function setPage(page) { setQuery(previous => ({ ...previous, page })) }
+
   const choices = result?.items ?? []
   const chosen = choices.some(item => item.id === value)
   return <div className="csm-field">
-    <TextInput label="Tìm danh mục đang sử dụng" value={search} maxLength={120} onChange={event => { setSearch(event.target.value); setPage(0) }} />
+    <TextInput label="Tìm danh mục đang sử dụng" value={search} maxLength={120}
+      onChange={event => setQuery({ search: event.target.value, page: 0 })} />
     <label htmlFor="product-category">Danh mục</label>
     <select id="product-category" name="categoryId" value={value} onChange={onChange} aria-invalid={Boolean(error) || undefined}
       aria-describedby={error ? 'product-category-error' : undefined}>
@@ -62,7 +76,8 @@ function CategoryPicker({ client, current, value, onChange, error }) {
       {choices.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
     </select>
     {error && <p id="product-category-error" className="csm-field-error">{error}</p>}
-    {failure ? <p role="alert">{errorMessage(failure)}</p> : !result ? <p role="status">Đang tải danh mục…</p> : <>
+    {failure ? <ListError status={failure.status} message={errorMessage(failure)} onRetry={() => retry(count => count + 1)} />
+      : !result ? <p role="status">Đang tải danh mục…</p> : <>
       {choices.length === 0 && <p>Không tìm thấy danh mục đang sử dụng.</p>}
       {result.totalPages > 1 && <div className="product-actions">
         <Button variant="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Danh mục trước</Button>
@@ -72,7 +87,7 @@ function CategoryPicker({ client, current, value, onChange, error }) {
   </div>
 }
 
-export function ProductPage({ client = productClient, categories = categoryClient, permissions = [] }) {
+export function ProductPage({ client = productClient, categories = categoryClient }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [refresh, refreshList] = useState(0)
@@ -90,7 +105,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   const settled = list?.query === query && list.refresh === refresh
   const result = settled ? list.result : null
   const error = settled ? list.error : null
-  const canPreviewCreate = Boolean(result && permissions.includes('PRODUCT_CREATE') && permissions.includes('PRODUCT_PRICE_UPDATE'))
+  const canCreate = canWrite('create') && canWrite('price')
 
   function canWrite(action) {
     return Boolean(permissionByAction[action] && result?.allowedActions?.includes(permissionByAction[action]))
@@ -126,7 +141,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   function change(field, value) { setValues(previous => ({ ...previous, [field]: value })) }
 
   async function open(action, id) {
-    if (action === 'create' ? !canPreviewCreate : action !== 'detail' && !canWrite(action)) return
+    if (action === 'create' ? !canCreate : action !== 'detail' && !canWrite(action)) return
     detail.current?.abort()
     setFields({}); setFailure(null); setNotice(''); setValues(blank)
     if (action === 'create') { setModal({ action }); return }
@@ -151,8 +166,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   async function submit(event) {
     event.preventDefault()
     const { action, record } = modal
-    // Create has no allowed action while DEP-001 is open.
-    if (!canWrite(action) || !record || pendingWrite.current) return
+    if (pendingWrite.current || (action === 'create' ? !canCreate : !record || !canWrite(action))) return
     const data = productValues(values)
     const errors = validateProduct(data, action)
     setFields(errors); setFailure(null)
@@ -162,11 +176,13 @@ export function ProductPage({ client = productClient, categories = categoryClien
     }
     pendingWrite.current = true; setSaving(true)
     try {
-      if (action === 'edit') await client.update(record.id, data)
+      if (action === 'create') await client.create(data)
+      else if (action === 'edit') await client.update(record.id, data)
       else if (action === 'price') await client.updatePrice(record.id, data.sellingPrice)
       else await client.deactivate(record.id)
       setModal(null)
-      setNotice(action === 'deactivate' ? 'Đã ngừng kinh doanh sản phẩm.' : 'Đã lưu sản phẩm.')
+      setNotice(action === 'create' ? 'Đã tạo sản phẩm với số dư tồn kho ban đầu bằng 0.'
+        : action === 'deactivate' ? 'Đã ngừng kinh doanh sản phẩm.' : 'Đã lưu sản phẩm.')
       refreshList(value => value + 1)
     } catch (error) {
       setFailure(error)
@@ -177,7 +193,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   const action = modal?.action
   const fieldsVisible = action === 'create' || Boolean(modal?.record)
   const info = action === 'create' || action === 'edit'
-  const blocked = !canWrite(action)
+  const blocked = action === 'create' ? !canCreate : !canWrite(action)
   function field(name, label, props = {}) {
     return <TextInput label={label} name={name} value={values[name]} error={fields[name]}
       onChange={event => change(name, event.target.value)} {...props} />
@@ -185,7 +201,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
 
   return <div className="product-page">
     <PageHeader title="Quản lý sản phẩm" description="Tra cứu SKU, danh mục, giá bán và trạng thái kinh doanh."
-      actions={canPreviewCreate && <Button id="product-create" variant="secondary" onClick={() => open('create')}>Xem biểu mẫu tạo</Button>} />
+      actions={canCreate && <Button id="product-create" onClick={() => open('create')}>Tạo sản phẩm</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách sản phẩm">
       <RecordFilters label="Tìm kiếm sản phẩm" statusId="product-active" searchLabel="Tìm SKU, tên, hãng hoặc model"
@@ -232,7 +248,6 @@ export function ProductPage({ client = productClient, categories = categoryClien
           </dl>
           <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
         </> : fieldsVisible && <form ref={form} onSubmit={submit} noValidate aria-busy={saving}>
-          {action === 'create' && <p role="status">Chưa thể tạo sản phẩm trong khi chờ khởi tạo số dư tồn kho (DEP-001). Biểu mẫu chưa gửi dữ liệu.</p>}
           {action === 'deactivate' ? <p><strong>{modal.record.name}</strong> sẽ ngừng kinh doanh và vẫn được lưu trong lịch sử.</p>
             : <fieldset disabled={saving}>
               {info && <>
@@ -250,7 +265,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
                 </div>
                 {field('minStockLevel', 'Ngưỡng tồn thấp', { required: true, inputMode: 'numeric', maxLength: 19 })}
               </>}
-              {(action === 'price' || action === 'create') && field('sellingPrice', 'Giá bán (₫)', { required: true, inputMode: 'numeric', maxLength: 19, 'data-initial-focus': action === 'price' || undefined })}
+              {(action === 'price' || action === 'create') && field('sellingPrice', 'Giá bán (₫)', { required: true, inputMode: 'numeric', 'data-initial-focus': action === 'price' || undefined })}
             </fieldset>}
           <footer>
             <Button data-initial-focus={action === 'deactivate' || undefined} variant="secondary" disabled={saving} onClick={close}>Hủy</Button>

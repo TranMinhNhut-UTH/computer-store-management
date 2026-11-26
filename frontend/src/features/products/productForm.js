@@ -14,7 +14,10 @@ export function productValues(values) {
 export function validateProduct(values, action) {
   const errors = {}
   if (action === 'create' || action === 'price') {
-    if (!unsigned.test(values.sellingPrice)) errors.sellingPrice = 'Nhập giá nguyên không âm, tối đa 19 chữ số.'
+    const price = values.sellingPrice
+    if (typeof price !== 'string' || !unsigned.test(price)) {
+      errors.sellingPrice = 'Nhập giá nguyên không âm, tối đa 19 chữ số.'
+    }
   }
   if (action === 'create' || action === 'edit') {
     if (!skuPattern.test(values.sku)) errors.sku = 'Nhập SKU hợp lệ, tối đa 64 ký tự.'

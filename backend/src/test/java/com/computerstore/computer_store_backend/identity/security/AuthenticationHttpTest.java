@@ -8,6 +8,8 @@ import com.computerstore.computer_store_backend.identity.repository.AppUserRepos
 import com.computerstore.computer_store_backend.shared.error.GlobalExceptionHandler;
 import com.computerstore.computer_store_backend.shared.validation.IdentifierNormalizer;
 import jakarta.servlet.http.Cookie;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +42,7 @@ import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -49,14 +52,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebAppConfiguration
 class AuthenticationHttpTest {
     private static final String AUTH = "/api/v1/auth";
+    private static final Instant LOGIN_TIME = Instant.parse("2026-11-25T00:00:00Z");
     private static final String BODY = "{\"username\":\" EMPLOYEE \",\"password\":\" password with spaces \"}";
     @Autowired WebApplicationContext context;
     @Autowired AppUserRepository users;
     @MockitoBean(name = "employeeAuthenticationProvider") AuthenticationProvider provider;
+    @MockitoBean(name = "utcClock") Clock clock;
+    private Instant now;
     private MockMvc mvc;
     private final JsonMapper json = JsonMapper.builder().build();
 
     @BeforeEach void setup() {
+        now = LOGIN_TIME;
+        when(clock.instant()).thenAnswer(call -> now);
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         reset(users);
         var account = mock(AppUser.class);
@@ -73,7 +81,9 @@ class AuthenticationHttpTest {
             if (!"employee".equals(username) || !" password with spaces ".equals(input.getCredentials())) {
                 throw new BadCredentialsException("Internal credentials LEAK");
             }
-            var principal = new EmployeePrincipal(9007199254740993L, "employee", "HASH_MUST_NOT_LEAK", true);
+            var current = users.findById(9007199254740993L).orElseThrow();
+            var principal = new EmployeePrincipal(9007199254740993L, "employee", "HASH_MUST_NOT_LEAK", true,
+                    current.getSessionVersion());
             return UsernamePasswordAuthenticationToken.authenticated(principal, input.getCredentials(), List.of());
         });
     }
@@ -131,6 +141,7 @@ class AuthenticationHttpTest {
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
 
         when(account.getActive()).thenReturn(false);
+        when(account.getSessionVersion()).thenReturn(1L);
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
                 .andExpect(jsonPath("$.username").doesNotExist());
@@ -138,9 +149,14 @@ class AuthenticationHttpTest {
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY));
 
         when(account.getActive()).thenReturn(true);
-        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
-        when(users.findById(9007199254740993L)).thenReturn(Optional.empty());
         mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized());
+        mvc.perform(post(AUTH + "/logout").session(session))
+                .andExpect(status().isUnauthorized());
+        var fresh = login(csrf(null), BODY);
+        mvc.perform(get(AUTH + "/me").session(fresh)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionVersion").doesNotExist());
+        when(users.findById(9007199254740993L)).thenReturn(Optional.empty());
+        mvc.perform(get(AUTH + "/me").session(fresh)).andExpect(status().isUnauthorized());
     }
 
     @Test void anonymousMeAndAnonymousLogoutWithValidCsrfReturn401() throws Exception {
@@ -150,6 +166,78 @@ class AuthenticationHttpTest {
         mvc.perform(post(AUTH + "/logout").session(token.session()).header(token.header(), token.token()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    }
+
+    @Test void activityRenewsIdleDeadlineAndFreshLoginGetsAnIndependentLifetime() throws Exception {
+        var session = login(csrf(null), BODY);
+        var oldId = session.getId();
+
+        now = LOGIN_TIME.plusSeconds(1799);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+        now = LOGIN_TIME.plusSeconds(1800);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+
+        now = LOGIN_TIME.plusSeconds(3600);
+        var expiredToken = csrf(session);
+        mvc.perform(post(AUTH + "/logout").session(session).header(expiredToken.header(), expiredToken.token()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized());
+
+        var fresh = login(expiredToken, BODY);
+        assertNotEquals(oldId, fresh.getId());
+        mvc.perform(get(AUTH + "/me").session(fresh)).andExpect(status().isOk());
+    }
+
+    @Test void protectedActivityCannotExtendTheAbsoluteDeadline() throws Exception {
+        var session = login(csrf(null), BODY);
+        for (long minutes = 20; minutes < 480; minutes += 20) {
+            now = LOGIN_TIME.plusSeconds(minutes * 60);
+            mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+        }
+        now = LOGIN_TIME.plusSeconds(28_799);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+        var independentSession = login(csrf(null), BODY);
+        now = LOGIN_TIME.plusSeconds(28_800);
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isUnauthorized());
+        mvc.perform(get(AUTH + "/me").session(independentSession)).andExpect(status().isOk());
+    }
+
+    @Test void anEmployeeSessionIssuedWithoutALifetimeRequiresFreshLogin() throws Exception {
+        var legacy = new EmployeePrincipal(9007199254740993L, "employee", null, true, 0L);
+        mvc.perform(get(AUTH + "/me").with(user(legacy))).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test void publicRoutesAndRejectedCsrfDoNotRenewIdle() throws Exception {
+        var session = login(csrf(null), BODY);
+        now = LOGIN_TIME.plusSeconds(1799);
+        var token = csrf(session);
+        mvc.perform(get("/api/health").session(session)).andExpect(status().isOk());
+        mvc.perform(post(AUTH + "/logout").session(session).header(token.header(), "wrong"))
+                .andExpect(status().isForbidden());
+        now = LOGIN_TIME.plusSeconds(1800);
+        mvc.perform(post(AUTH + "/logout").session(session))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test void expiredServletCookieReturns401OnMutationWhileAnonymousCsrfIsStillRequired() throws Exception {
+        mvc.perform(post(AUTH + "/logout").with(request -> {
+            request.setRequestedSessionId("expired-session");
+            request.setRequestedSessionIdValid(false);
+            return request;
+        })).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        mvc.perform(post(AUTH + "/logout")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test void validLifetimeCannotRestoreAnActiveAccountWithAnObsoleteSecurityVersion() throws Exception {
+        var session = login(csrf(null), BODY);
+        var account = users.findById(9007199254740993L).orElseThrow();
+        when(account.getSessionVersion()).thenReturn(1L);
+        mvc.perform(get(AUTH + "/me").session(session))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        mvc.perform(get(AUTH + "/me").session(login(csrf(session), BODY))).andExpect(status().isOk());
     }
 
     @Test void invalidCredentialsAndDisabledAccountReturnIdenticalPublicErrors() throws Exception {
@@ -282,6 +370,35 @@ class AuthenticationHttpTest {
         assertNotEquals(actualSession.getId(), body.get("token").asText());
         assertFalse(body.has("sessionId"));
         return new Token(actualSession, body.get("headerName").asText(), body.get("token").asText());
+    }
+
+    @Test void oversizedPasswordUsesTheSameSafeHttpFailureAsAnUnknownAccount() throws Exception {
+        var encoder = new SecurityConfig().passwordEncoder();
+        var realProvider = new EmployeeAuthenticationProvider(new EmployeeUserDetailsService(users), encoder);
+        var account = users.findById(9007199254740993L).orElseThrow();
+        when(account.getId()).thenReturn(9007199254740993L);
+        var valid = "\u00e9".repeat(36);
+        when(account.getPasswordHash()).thenReturn(encoder.encode(valid));
+        when(users.findByUsername("employee")).thenReturn(Optional.of(account));
+        doAnswer(call -> realProvider.authenticate(call.getArgument(0))).when(provider).authenticate(any());
+
+        var session = login(csrf(null), json.writeValueAsString(java.util.Map.of("username", "employee", "password", valid)));
+        mvc.perform(get(AUTH + "/me").session(session)).andExpect(status().isOk());
+
+        String first = null;
+        for (String username : List.of("employee", "unknown")) {
+            var token = csrf(null);
+            var result = mvc.perform(post(AUTH + "/login").session(token.session()).header(token.header(), token.token())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(java.util.Map.of("username", username, "password", valid + "x"))))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
+                    .andExpect(jsonPath("$.username").doesNotExist()).andReturn();
+            var body = result.getResponse().getContentAsString();
+            if (first == null) first = body;
+            else assertEquals(first, body);
+            assertNull(token.session().getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY));
+        }
     }
 
     private MockHttpSession login(Token token, String body) throws Exception {

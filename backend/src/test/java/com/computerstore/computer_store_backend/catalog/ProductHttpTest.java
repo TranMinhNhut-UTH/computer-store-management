@@ -108,6 +108,25 @@ class ProductHttpTest {
         verify(service, never()).update(any(), any());
     }
 
+    @Test void invalidPricesReturnFieldErrorsOnBothRoutesBeforeTheUseCase() throws Exception {
+        reset(service);
+        var mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        for (String price : List.of("100", "100.0", "1e2", "true", "[]", "{\"value\":\"100\"}", "null",
+                "\"\"", "\"-1\"", "\"001\"", "\"+1\"", "\"1.0\"", "\"1e2\"", "\"NaN\"", "\"Infinity\"",
+                "\" 100 \"", "\"10000000000000000000\"")) {
+            mvc.perform(put(BASE + "/42/price").with(user("manager")).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"sellingPrice\":" + price + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.fieldErrors[*].field").value(org.hamcrest.Matchers.hasItem("sellingPrice")));
+            mvc.perform(post(BASE).with(user("manager")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"information\":" + INFO + ",\"sellingPrice\":" + price + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fieldErrors[*].field").value(org.hamcrest.Matchers.hasItem("sellingPrice")));
+        }
+        verifyNoInteractions(service);
+    }
+
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class,
             EmployeeUserDetailsService.class, ProductController.class, GlobalExceptionHandler.class})

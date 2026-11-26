@@ -12,6 +12,7 @@ export const navigationGroups = [
     { id: 'stocktake', label: 'Kiểm kê' }, { id: 'adjustments', label: 'Điều chỉnh tồn kho' },
   ] },
   { label: 'Quản lý', items: [{ id: 'employees', label: 'Nhân viên', permission: 'EMPLOYEE_READ' }, { id: 'reports', label: 'Báo cáo' }] },
+  { label: 'Tài khoản', items: [{ id: 'account-security', label: 'Bảo mật tài khoản' }] },
 ]
 
 const destinations = navigationGroups.flatMap(group => group.items)
