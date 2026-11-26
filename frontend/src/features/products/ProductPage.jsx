@@ -29,7 +29,7 @@ function errorMessage(failure, action) {
     case 403: return 'Truy cập bị từ chối. Tài khoản hiện không có quyền thực hiện thao tác này.'
     case 404: return 'Không tìm thấy sản phẩm hoặc danh mục đã chọn.'
     case 409: return action === 'create'
-      ? 'Chưa thể tạo sản phẩm. Kiểm tra SKU đã tồn tại, danh mục đã ngừng sử dụng hoặc quyền mở tạo sản phẩm.'
+      ? 'Chưa thể tạo sản phẩm. Kiểm tra SKU đã tồn tại, danh mục đã ngừng sử dụng hoặc chức năng tạo đang tạm tắt.'
       : 'Dữ liệu đang xung đột. Kiểm tra SKU hoặc trạng thái danh mục rồi thử lại.'
     case 0: return 'Không thể kết nối đến máy chủ.'
     default: return 'Chưa thể xử lý yêu cầu. Vui lòng thử lại.'
@@ -87,7 +87,7 @@ function CategoryPicker({ client, current, value, onChange, error }) {
   </div>
 }
 
-export function ProductPage({ client = productClient, categories = categoryClient, permissions = [] }) {
+export function ProductPage({ client = productClient, categories = categoryClient }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [refresh, refreshList] = useState(0)
@@ -106,7 +106,6 @@ export function ProductPage({ client = productClient, categories = categoryClien
   const result = settled ? list.result : null
   const error = settled ? list.error : null
   const canCreate = canWrite('create') && canWrite('price')
-  const canPreviewCreate = Boolean(result && permissions.includes('PRODUCT_CREATE') && permissions.includes('PRODUCT_PRICE_UPDATE'))
 
   function canWrite(action) {
     return Boolean(permissionByAction[action] && result?.allowedActions?.includes(permissionByAction[action]))
@@ -142,7 +141,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
   function change(field, value) { setValues(previous => ({ ...previous, [field]: value })) }
 
   async function open(action, id) {
-    if (action === 'create' ? !(canCreate || canPreviewCreate) : action !== 'detail' && !canWrite(action)) return
+    if (action === 'create' ? !canCreate : action !== 'detail' && !canWrite(action)) return
     detail.current?.abort()
     setFields({}); setFailure(null); setNotice(''); setValues(blank)
     if (action === 'create') { setModal({ action }); return }
@@ -202,8 +201,7 @@ export function ProductPage({ client = productClient, categories = categoryClien
 
   return <div className="product-page">
     <PageHeader title="Quản lý sản phẩm" description="Tra cứu SKU, danh mục, giá bán và trạng thái kinh doanh."
-      actions={(canCreate || canPreviewCreate) && <Button id="product-create" variant={canCreate ? 'primary' : 'secondary'}
-        onClick={() => open('create')}>{canCreate ? 'Tạo sản phẩm' : 'Xem biểu mẫu tạo'}</Button>} />
+      actions={canCreate && <Button id="product-create" onClick={() => open('create')}>Tạo sản phẩm</Button>} />
     {notice && <p role="status" className="message message-success">{notice}</p>}
     <Card aria-label="Danh sách sản phẩm">
       <RecordFilters label="Tìm kiếm sản phẩm" statusId="product-active" searchLabel="Tìm SKU, tên, hãng hoặc model"
@@ -250,7 +248,6 @@ export function ProductPage({ client = productClient, categories = categoryClien
           </dl>
           <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
         </> : fieldsVisible && <form ref={form} onSubmit={submit} noValidate aria-busy={saving}>
-          {action === 'create' && !canCreate && <p role="status">Chưa thể tạo sản phẩm trong khi chờ phê duyệt DEP-001. Biểu mẫu chưa gửi dữ liệu.</p>}
           {action === 'deactivate' ? <p><strong>{modal.record.name}</strong> sẽ ngừng kinh doanh và vẫn được lưu trong lịch sử.</p>
             : <fieldset disabled={saving}>
               {info && <>

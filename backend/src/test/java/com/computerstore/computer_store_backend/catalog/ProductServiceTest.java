@@ -128,14 +128,14 @@ class ProductServiceTest {
         verifyNoInteractions(products);
     }
 
-    @Test void createRequiresInitialPriceGrantAndFailsClosedWithoutInventoryContract() {
+    @Test void createRequiresInitialPriceGrantAndHonorsExplicitDisable() {
         grants("PRODUCT_CREATE");
         assertCode(ACCESS_DENIED, () -> service.create(new ProductCreateRequest(input, "1")));
         verifyNoInteractions(products, categories);
         grants("PRODUCT_CREATE", "PRODUCT_PRICE_UPDATE");
         var failure = assertThrows(BusinessException.class, () -> service.create(new ProductCreateRequest(input, "1")));
         assertEquals(BUSINESS_CONFLICT, failure.code());
-        assertTrue(failure.getMessage().contains("inventory initialization"));
+        assertEquals("Product creation is currently disabled.", failure.getMessage());
         verify(products, never()).saveAndFlush(any());
         verify(tx, times(2)).rollback(transaction);
         verify(tx, never()).commit(any());

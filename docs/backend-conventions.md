@@ -149,7 +149,7 @@ Inventory.version do Hibernate quản lý; Service không tự tăng. Cập nh�
 
 **PENDING:** lock order liên module đầy đủ, đặc biệt use case chạm order + return + payment + stocktake/adjustment; loại khóa ở từng query và phạm vi khóa dữ liệu master active; transaction ownership và xử lý inventory row chưa tồn tại. Thứ tự nền tảng trong design không thay thế danh sách lock cụ thể cần nhóm duyệt cho từng workflow. Không tự chốt total order giữa nhiều loại chứng từ trong tài liệu này.
 
-**PROPOSED — inventory row lifecycle:** tạo inventory số dư 0 cùng transaction tạo Product để đáp ứng invariant mỗi product có một số dư; khi chứng từ gặp thiếu inventory row, báo lỗi integrity thay vì tự sửa âm thầm. Phương án lazy-create cần xử lý race/UNIQUE riêng nếu được chọn. Cả cơ chế tạo row và cách báo lỗi hiện còn PENDING; không thêm cột/bảng hoặc sửa Entity bằng tài liệu này.
+**APPROVED — Product Create V1 (P08/DEP-001):** chủ dự án duyệt tạo đúng một dòng inventory số dư 0 trong cùng transaction tạo Product. Lỗi ở một trong hai lần ghi làm rollback cả transaction. Không ghi movement khi khởi tạo, không lazy-create hay tự sửa dòng thiếu. Mã lỗi cụ thể và các quy tắc P08 khác của luồng chứng từ vẫn chờ chốt.
 
 ## H. Idempotency và retry
 

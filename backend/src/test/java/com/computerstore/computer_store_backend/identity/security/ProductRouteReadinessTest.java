@@ -36,6 +36,7 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -51,6 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** Runs the released filter rules with the real actor, resolver, policy and Product service. */
 @SpringJUnitConfig(ProductRouteReadinessTest.ReleaseFixture.class)
 @WebAppConfiguration
+@TestPropertySource(properties = "csm.product-creation.enabled=false")
 class ProductRouteReadinessTest {
     private static final String BASE = "/api/v1/products";
     private static final String INFO = """
@@ -147,7 +149,7 @@ class ProductRouteReadinessTest {
         verifyNoInteractions(products, categories);
     }
 
-    @Test void managerReachesAllOperationsButCreateDoesNotWriteWithoutInventory() throws Exception {
+    @Test void explicitlyDisabledCreateIsNotAdvertisedAndOtherWritesRemainAvailable() throws Exception {
         approvedGrants(EmployeeRole.MANAGER);
         mvc.perform(get(BASE).with(user(PRINCIPAL))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value("1"))

@@ -64,7 +64,7 @@ test('Product renders list and detail for read-only staff with write actions hid
   assert.match(container.querySelector('tbody').textContent, /9\.999\.999\.999\.999\.999\.999/)
   assert.match(container.querySelector('tbody').textContent, /13:45 22\/11\/2026/)
   for (const name of ['Sửa sản phẩm CPU', 'Đổi giá bán CPU', 'Ngừng kinh doanh CPU']) assert.equal(byLabel(name), null)
-  assert.equal(button('Xem biểu mẫu tạo'), undefined)
+  assert.equal(button('Tạo sản phẩm'), undefined)
   await click(byLabel('Xem sản phẩm CPU'))
   assert.match(container.querySelector('dialog').textContent, /Linh kiện.*Brand.*M1/s)
   assert.deepEqual(calls.at(-1), ['detail', product.id])
@@ -95,20 +95,21 @@ test('Product search debounces and status filter applies immediately with pagina
   assert.deepEqual(calls.at(-1)[1], { q: '', active: '', page: 0, size: 20 })
 })
 
-test('Product creation form is inspectable but cannot submit without DEP-001', async () => {
+test('Product Create is hidden when the list omits the action, even with account grants', async () => {
   await render(allWrites, ['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
-  await click(button('Xem biểu mẫu tạo'))
-  assert.ok(container.querySelector('dialog [name=sku]'))
-  assert.ok(container.querySelector('dialog [name=sellingPrice]'))
-  assert.ok(container.querySelector('dialog select option[value="7"]'))
-  assert.match(container.querySelector('dialog').textContent, /DEP-001/)
-  assert.ok(button('Lưu sản phẩm').disabled)
-  await submit()
-  assert.equal(calls.some(([action]) => action === 'create'), false)
+  assert.equal(button('Tạo sản phẩm'), undefined)
+  assert.equal(container.querySelector('dialog'), null)
 })
 
 test('Product Create needs both server actions, validates, and refreshes after saving', async () => {
   let finish
+  let created = false
+  const saved = { ...product, id: '12', sku: 'NEW-SKU', name: 'Sản phẩm mới' }
+  const list = client.list
+  client.list = async query => {
+    const result = await list(query)
+    return created ? { ...result, items: [...result.items, saved] } : result
+  }
   client.create = values => {
     calls.push(['create', values])
     return new Promise(resolve => { finish = resolve })
@@ -128,10 +129,12 @@ test('Product Create needs both server actions, validates, and refreshes after s
   assert.equal(calls.at(-1)[1].sellingPrice, '9999999999999999999')
   await submit()
   assert.equal(calls.filter(([action]) => action === 'create').length, 1)
-  await act(async () => finish(product))
+  created = true
+  await act(async () => finish(saved))
   assert.equal(container.querySelector('dialog'), null)
   assert.match(container.textContent, /Đã tạo sản phẩm với số dư tồn kho ban đầu bằng 0/)
   assert.equal(calls.at(-1)[0], 'list')
+  assert.match(container.querySelector('tbody').textContent, /NEW-SKU.*Sản phẩm mới/)
 })
 
 test('Product Create keeps form input when a server field error or conflict is returned', async () => {

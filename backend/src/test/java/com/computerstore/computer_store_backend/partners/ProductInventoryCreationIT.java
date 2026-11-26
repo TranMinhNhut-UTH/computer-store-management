@@ -53,7 +53,7 @@ class ProductInventoryCreationIT {
                     "--spring.datasource.url=" + source.getURL(),
                     "--spring.datasource.username=root", "--spring.datasource.password=",
                     "--spring.flyway.enabled=false", "--spring.jpa.hibernate.ddl-auto=validate",
-                    "--csm.product-creation.enabled=true", "--server.address=127.0.0.1", "--server.port=0",
+                    "--server.address=127.0.0.1", "--server.port=0",
                     "--logging.level.root=WARN")) {
                 int port = ((WebServerApplicationContext) app).getWebServer().getPort();
                 var manager = new Session(port);
@@ -114,7 +114,10 @@ class ProductInventoryCreationIT {
         assertEquals(PRODUCTS + "/" + id, response.headers().firstValue("Location").orElseThrow());
         assertEquals(PRICE, created.get("sellingPrice").asString());
         assertEquals("NEW-SKU", created.get("sku").asString());
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM product"));
         assertZeroBalance(db, "NEW-SKU");
+        assertEquals(0, count(db, "SELECT COUNT(*) FROM inventory_transaction"));
+        assertEquals(id, expect(200, manager.read(PRODUCTS + "?q=NEW-SKU")).get("items").get(0).get("id").asString());
         expect(409, manager.write("POST", PRODUCTS, input));
 
         expect(200, manager.write("PUT", PRODUCTS + "/" + id, information("NEW-SKU", 1)));

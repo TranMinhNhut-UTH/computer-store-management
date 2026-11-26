@@ -44,7 +44,7 @@ public class ProductService {
 
     public ProductService(ProductRepository products, CategoryRepository categories,
             PermissionPolicy permissions, UtcTimeProvider time, EntityManager entities,
-            InventoryLifecycleService inventory, @Value("${csm.product-creation.enabled:false}") boolean creationEnabled) {
+            InventoryLifecycleService inventory, @Value("${csm.product-creation.enabled:true}") boolean creationEnabled) {
         this.products = products;
         this.categories = categories;
         this.permissions = permissions;
@@ -83,7 +83,7 @@ public class ProductService {
         var values = information(request.information());
         var amount = price(request.sellingPrice());
         if (!creationEnabled) {
-            throw conflict("Product creation is unavailable until the inventory initialization contract is integrated.");
+            throw conflict("Product creation is currently disabled.");
         }
         // Lock the active Category before inserting Product, using the same lock as Category deactivation.
         var category = activeCategory(values.categoryId());
