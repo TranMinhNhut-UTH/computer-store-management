@@ -28,6 +28,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import static org.mockito.Mockito.*;
+import static com.computerstore.computer_store_backend.reports.InventoryReport.StockFilter.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -38,6 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ReportsSecurityTest {
     private static final String BASE = "/api/v1/reports";
     private static final Set<String> READS = Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ");
+    private static final List<String> PATHS = List.of("/access", "/overview", "/inventory");
 
     @Autowired WebApplicationContext context;
     @Autowired RoleResolutionService roles;
@@ -49,8 +51,8 @@ class ReportsSecurityTest {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
 
-    @Test void anonymousCannotReadEitherRoute() throws Exception {
-        for (String path : List.of("/access", "/overview")) {
+    @Test void anonymousCannotReadReportRoutes() throws Exception {
+        for (String path : PATHS) {
             mvc.perform(get(BASE + path)).andExpect(status().isUnauthorized());
         }
         verifyNoInteractions(roles, reports);
@@ -59,14 +61,43 @@ class ReportsSecurityTest {
     @Test void managerNeedsEveryExistingReadGrantAndOtherRolesAreDenied() throws Exception {
         resolved(EmployeeRole.MANAGER, Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ"));
         mvc.perform(get(BASE + "/overview").with(user("fixture"))).andExpect(status().isForbidden());
+        mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isForbidden());
+        mvc.perform(get(BASE + "/inventory").param("filter", "ALL").with(user("fixture")))
+                .andExpect(status().isForbidden());
         for (var role : List.of(EmployeeRole.ADMIN, EmployeeRole.SALES_STAFF, EmployeeRole.WAREHOUSE_STAFF)) {
             resolved(role, READS);
-            for (String path : List.of("/access", "/overview")) {
+            for (String path : PATHS) {
                 mvc.perform(get(BASE + path).with(user("fixture").roles("MANAGER")))
                         .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
             }
         }
         verifyNoInteractions(reports);
+    }
+
+    @Test void managerReadsInventoryWithExistingGrantsAndBoundedPagination() throws Exception {
+        resolved(EmployeeRole.MANAGER, READS);
+        var summary = new InventoryReport.Summary(1, "9007199254740993", 0, 1);
+        var row = new InventoryReport.StockProduct("SKU", "Product", "Category",
+                "9007199254740993", "9007199254740993", InventoryReport.StockStatus.LOW_STOCK);
+        var inventory = new InventoryReport(summary, List.of(row), 0, 20, 1, 1);
+        when(reports.inventory(any(), any())).thenReturn(inventory);
+        mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.totalQuantity").value("9007199254740993"))
+                .andExpect(jsonPath("$.items[0].minStockLevel").value("9007199254740993"))
+                .andExpect(jsonPath("$.items[0].stockStatus").value("LOW_STOCK"))
+                .andExpect(jsonPath("$.items[0].sellingPrice").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.totalElements").value(1));
+        verify(reports).inventory(argThat(page -> page.getPageNumber() == 0 && page.getPageSize() == 20), eq(LOW));
+        for (var filter : List.of(ALL, OUT)) {
+            mvc.perform(get(BASE + "/inventory").param("filter", filter.name()).with(user("fixture")))
+                    .andExpect(status().isOk());
+            verify(reports).inventory(any(), eq(filter));
+        }
+        for (String invalid : List.of("?page=-1", "?size=101", "?size=0", "?page=2147483647&size=2", "?filter=UNKNOWN")) {
+            mvc.perform(get(BASE + "/inventory" + invalid).with(user("fixture")))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        verifyNoMoreInteractions(reports);
     }
 
     @Test void accessCheckDoesNotQueryReportsAndManagerSeesOnlyAggregates() throws Exception {
@@ -84,7 +115,8 @@ class ReportsSecurityTest {
 
     @Test void reportWritesAndUnreleasedReportsRemainDenied() throws Exception {
         mvc.perform(post(BASE + "/overview").with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
-        mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isForbidden());
+        mvc.perform(post(BASE + "/inventory").with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(get(BASE + "/inventory/history").with(user("fixture"))).andExpect(status().isForbidden());
         verifyNoInteractions(roles, reports);
     }
 

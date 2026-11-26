@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
 let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
-let createRoot, passwordStatus
+let createRoot, passwordStatus, inventoryResponse
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -51,6 +51,7 @@ before(async () => {
     if (url.endsWith('/auth/ui-capabilities')) return Response.json({ permissions: capabilities })
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
+    if (url.startsWith('/api/v1/reports/inventory?')) return inventoryResponse(new URL(url, 'http://localhost').searchParams)
     if (url.startsWith('/api/v1/employees')) {
       return capabilities.includes('EMPLOYEE_READ')
         ? Response.json({ items: [], page: 0, size: 20, totalPages: 0, totalElements: 0, allowedActions: [] })
@@ -76,6 +77,10 @@ beforeEach(() => {
   reportAccess = false
   capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
+  inventoryResponse = params => Response.json({
+    summary: { activeSkus: 0, totalQuantity: '0', outOfStockSkus: 0, lowStockSkus: 0 },
+    items: [], page: Number(params.get('page')), size: 20, totalElements: 0, totalPages: 0,
+  })
   viewportWidth = 1440
   mediaQueries.clear()
   localStorage.clear()
@@ -530,8 +535,70 @@ test('reports recover from a network error and distinguish an empty database', a
   })
   await click(container.querySelector('.reports-page button'))
   assert.match(container.querySelector('.reports-page .csm-empty').textContent, /Chưa có danh mục/)
+  assert.match(container.querySelector('.reports-page').textContent, /Không có sản phẩm tồn thấp/)
   assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
   assert.equal(container.querySelector('.reports-page table'), null)
+})
+
+test('inventory reports switch filters from a later page, preserve exact stock and isolate integrity errors', async () => {
+  authenticated = true
+  reportAccess = true
+  window.history.replaceState(null, '', '/reports')
+  const zero = { total: 0, active: 0, inactive: 0 }
+  reportResponse = () => Response.json({
+    products: zero, categories: zero, suppliers: zero, customers: zero, productsByCategory: [],
+  })
+  let conflict = false
+  inventoryResponse = params => {
+    const page = Number(params.get('page'))
+    const filter = params.get('filter') ?? 'LOW'
+    if (conflict) return Response.json({ code: 'BUSINESS_CONFLICT' }, { status: 409 })
+    const low = index => ({
+      sku: 'SKU-' + index, productName: 'Mặt hàng thử', categoryName: 'Danh mục thử',
+      quantityOnHand: '9007199254740993', minStockLevel: '9007199254740993', stockStatus: 'LOW_STOCK',
+    })
+    const out = { ...low(0), sku: 'Z-EMPTY', quantityOnHand: '0', stockStatus: 'OUT_OF_STOCK' }
+    const normal = {
+      ...low(0), sku: 'N-NORMAL', quantityOnHand: String(9223372036854775810n - 20n * 9007199254740993n),
+      minStockLevel: '0', stockStatus: 'NORMAL',
+    }
+    const lowItems = Array.from({ length: 20 }, (_, index) => low(index))
+    const items = { ALL: [normal, ...lowItems, out], LOW: [...lowItems, out], OUT: [out] }[filter]
+    return Response.json({
+      summary: { activeSkus: 22, totalQuantity: '9223372036854775810', outOfStockSkus: 1, lowStockSkus: 21 },
+      items: items.slice(page * 20, (page + 1) * 20),
+      page, size: 20, totalElements: items.length, totalPages: Math.ceil(items.length / 20),
+    })
+  }
+  await render()
+  const region = container.querySelector('[aria-labelledby="reports-inventory"]')
+  const select = region.querySelector('select')
+  const filterBy = value => act(async () => {
+    select.value = value
+    select.dispatchEvent(new window.Event('change', { bubbles: true }))
+  })
+  assert.equal(select.value, 'LOW')
+  assert.match(region.querySelector('.reports-inventory-metrics').textContent, /9\.223\.372\.036\.854\.775\.810/)
+  assert.match(region.querySelector('tbody').textContent, /9\.007\.199\.254\.740\.993.*Tồn thấp/)
+  assert.match(region.querySelector('tbody').textContent, /SKU-0.*Danh mục thử/)
+  const button = label => [...region.querySelectorAll('button')].find(node => node.textContent === label)
+  await click(button('Trang sau'))
+  assert.match(region.querySelector('tbody').textContent, /Z-EMPTY.*Hết hàng/)
+  assert.ok(requests.some(entry => entry.url.endsWith('/inventory?page=1&size=20')))
+  await filterBy('ALL')
+  assert.match(region.querySelector('tbody').textContent, /N-NORMAL.*Bình thường/)
+  assert.match(region.querySelector('nav').textContent, /22 sản phẩm · Trang 1\/2/)
+  assert.ok(requests.at(-1).url.endsWith('/inventory?page=0&size=20&filter=ALL'))
+  await filterBy('OUT')
+  assert.equal(region.querySelectorAll('tbody tr').length, 1)
+  assert.match(region.querySelector('tbody').textContent, /Z-EMPTY.*Hết hàng/)
+  assert.match(region.querySelector('nav').textContent, /1 sản phẩm hết hàng · Trang 1\/1/)
+  assert.ok(requests.at(-1).url.endsWith('/inventory?page=0&size=20&filter=OUT'))
+  conflict = true
+  await filterBy('LOW')
+  assert.match(region.querySelector('[role=alert]').textContent, /chưa có số dư tồn kho/)
+  assert.equal(region.querySelector('.reports-inventory-metrics'), null)
+  assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
 })
 
 test('staff navigation and deep links respect the server capability and API denial', async () => {
