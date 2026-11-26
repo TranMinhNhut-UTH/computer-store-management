@@ -1,5 +1,7 @@
 package com.computerstore.computer_store_backend.identity.security;
 
+import com.computerstore.computer_store_backend.inventory.service.InventoryLifecycleService;
+
 import com.computerstore.computer_store_backend.catalog.controller.ProductController;
 import com.computerstore.computer_store_backend.catalog.entity.Category;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
@@ -206,6 +208,9 @@ class ProductRouteReadinessTest {
             ProductController.class, ProductService.class, GlobalExceptionHandler.class,
             CurrentActorService.class, RoleResolutionService.class, AuthorizationService.class, PermissionPolicy.class})
     static class ReleaseFixture {
+        @Bean InventoryLifecycleService inventory() {
+            return mock(InventoryLifecycleService.class);
+        }
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
         @Bean EntityManager entities() { return mock(EntityManager.class); }
         @Bean ProductRepository products() { return mock(ProductRepository.class); }

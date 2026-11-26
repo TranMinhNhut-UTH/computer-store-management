@@ -71,10 +71,11 @@ test('Product renders list and detail for read-only staff with write actions hid
 })
 
 test('Product enables only the specific write action reported by the server', async () => {
-  await render(['PRODUCT_UPDATE'])
+  await render(['PRODUCT_UPDATE', 'PRODUCT_CREATE'])
   assert.equal(byLabel('Sửa sản phẩm CPU').disabled, false)
   assert.equal(byLabel('Đổi giá bán CPU'), null)
   assert.equal(byLabel('Ngừng kinh doanh CPU'), null)
+  assert.equal(button('Tạo sản phẩm'), undefined)
   assert.equal(container.querySelector('dialog'), null)
 })
 
@@ -104,6 +105,52 @@ test('Product creation form is inspectable but cannot submit without DEP-001', a
   assert.ok(button('Lưu sản phẩm').disabled)
   await submit()
   assert.equal(calls.some(([action]) => action === 'create'), false)
+})
+
+test('Product Create needs both server actions, validates, and refreshes after saving', async () => {
+  let finish
+  client.create = values => {
+    calls.push(['create', values])
+    return new Promise(resolve => { finish = resolve })
+  }
+  await render(['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
+  await click(button('Tạo sản phẩm'))
+  await submit()
+  assert.equal(document.activeElement.name, 'sellingPrice')
+  assert.equal(calls.some(([action]) => action === 'create'), false)
+
+  await change('[name=sku]', 'new-sku')
+  await change('[name=name]', 'Sản phẩm mới')
+  await change('[name=categoryId]', '7')
+  await change('[name=sellingPrice]', '9999999999999999999')
+  await submit()
+  assert.ok(button('Lưu sản phẩm').disabled)
+  assert.equal(calls.at(-1)[1].sellingPrice, '9999999999999999999')
+  await submit()
+  assert.equal(calls.filter(([action]) => action === 'create').length, 1)
+  await act(async () => finish(product))
+  assert.equal(container.querySelector('dialog'), null)
+  assert.match(container.textContent, /Đã tạo sản phẩm với số dư tồn kho ban đầu bằng 0/)
+  assert.equal(calls.at(-1)[0], 'list')
+})
+
+test('Product Create keeps form input when a server field error or conflict is returned', async () => {
+  let error = { status: 400, fields: ['sku'] }
+  client.create = async () => { throw error }
+  await render(['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'])
+  await click(button('Tạo sản phẩm'))
+  await change('[name=sku]', 'duplicate')
+  await change('[name=name]', 'Sản phẩm mới')
+  await change('[name=categoryId]', '7')
+  await change('[name=sellingPrice]', '0')
+  await submit()
+  const input = container.querySelector('[name=sku]')
+  assert.equal(input.getAttribute('aria-invalid'), 'true')
+  error = { status: 409 }
+  await submit()
+  assert.match(container.querySelector('[role=alert]').textContent, /SKU đã tồn tại.*danh mục đã ngừng sử dụng/)
+  assert.equal(input.value, 'duplicate')
+  assert.equal(button('Lưu sản phẩm').disabled, false)
 })
 
 test('Product category lookup returns to an available page when the result shrinks', async () => {

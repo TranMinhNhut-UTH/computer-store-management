@@ -2,6 +2,19 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createProductClient } from './products.js'
 
+test('Product client exposes server-gated Create and maps nested validation fields to the form', async () => {
+  const client = createProductClient(async (url, options) => {
+    if (url.endsWith('/csrf')) return Response.json({ headerName: 'X-CSRF-TOKEN', token: 'test-token' })
+    if (options.method === 'POST') return Response.json({
+      code: 'VALIDATION_ERROR', fieldErrors: [{ field: 'information.sku' }, { field: 'unknown' }, { field: 'sellingPrice' }],
+    }, { status: 400 })
+    return Response.json({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0,
+      allowedActions: ['PRODUCT_CREATE', 'PRODUCT_PRICE_UPDATE'] })
+  })
+  assert.deepEqual((await client.list()).allowedActions, ['PRODUCT_PRICE_UPDATE', 'PRODUCT_CREATE'])
+  await assert.rejects(client.create({}), { status: 400, fields: ['sku', 'sellingPrice'] })
+})
+
 const fixture = { id: '9007199254740993', sku: 'IT', name: 'Product', categoryId: '7', categoryName: 'Category',
   brandName: null, modelCode: null, description: null, minStockLevel: '0', sellingPrice: '9999999999999999999',
   active: true, createdAt: '2026-11-22T05:00:00Z', updatedAt: '2026-11-22T06:00:00Z' }

@@ -5,7 +5,7 @@ const base = '/api/v1/products'
 const idPattern = /^[1-9][0-9]{0,18}$/
 const integerPattern = /^(0|[1-9][0-9]{0,18})$/
 const infoFields = ['sku', 'name', 'categoryId', 'brandName', 'modelCode', 'description', 'minStockLevel']
-const writePermissions = ['PRODUCT_UPDATE', 'PRODUCT_PRICE_UPDATE', 'PRODUCT_DEACTIVATE']
+const writePermissions = ['PRODUCT_UPDATE', 'PRODUCT_PRICE_UPDATE', 'PRODUCT_DEACTIVATE', 'PRODUCT_CREATE']
 function information(values) {
   return Object.fromEntries(infoFields.map(key => [key, values[key]]))
 }
@@ -26,15 +26,22 @@ function record(value) {
 }
 
 export function createProductClient(fetchRequest = globalThis.fetch.bind(globalThis)) {
-  const request = createApiTransport(fetchRequest, [...infoFields, 'sellingPrice'])
+  const request = createApiTransport(fetchRequest, [...infoFields, ...infoFields.map(key => `information.${key}`), 'sellingPrice'])
   const auth = createAuthClient(fetchRequest)
   async function mutate(url, method, payload) {
     const csrf = await auth.refreshCsrf()
-    return record(await request(url, {
-      method,
-      headers: { [csrf.headerName]: csrf.token, ...(payload ? { 'Content-Type': 'application/json' } : {}) },
-      ...(payload ? { body: JSON.stringify(payload) } : {}),
-    }))
+    try {
+      return record(await request(url, {
+        method,
+        headers: { [csrf.headerName]: csrf.token, ...(payload ? { 'Content-Type': 'application/json' } : {}) },
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
+      }))
+    } catch (error) {
+      if (error instanceof ApiError && error.fields.some(field => field.startsWith('information.'))) {
+        error.fields = error.fields.map(field => field.replace(/^information\./, ''))
+      }
+      throw error
+    }
   }
   return {
     async list({ q = '', active = '', categoryId = '', page = 0, size = 20 } = {}, { signal } = {}) {
@@ -45,7 +52,8 @@ export function createProductClient(fetchRequest = globalThis.fetch.bind(globalT
       const data = await request(`${base}?${params}`, { signal })
       validateListPage(data, page, size)
       const allowedActions = Array.isArray(data.allowedActions)
-        ? writePermissions.filter(code => data.allowedActions.includes(code))
+        ? writePermissions.filter(code => data.allowedActions.includes(code)
+          && (code !== 'PRODUCT_CREATE' || data.allowedActions.includes('PRODUCT_PRICE_UPDATE')))
         : []
       return { ...data, items: data.items.map(record), allowedActions }
     },

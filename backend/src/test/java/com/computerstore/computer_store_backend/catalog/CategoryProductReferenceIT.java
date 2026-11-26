@@ -1,5 +1,7 @@
 package com.computerstore.computer_store_backend.catalog;
 
+import com.computerstore.computer_store_backend.inventory.service.InventoryLifecycleService;
+
 import com.computerstore.computer_store_backend.catalog.controller.CategoryController;
 import com.computerstore.computer_store_backend.catalog.dto.request.ProductPriceRequest;
 import com.computerstore.computer_store_backend.catalog.dto.request.ProductWriteRequest;
@@ -202,6 +204,9 @@ class CategoryProductReferenceIT {
             EmployeeUserDetailsService.class, CategoryController.class, CategoryService.class, ProductService.class,
             GlobalExceptionHandler.class, AuthorizationService.class, PermissionPolicy.class})
     static class Fixture {
+        @Bean InventoryLifecycleService inventory() {
+            return mock(InventoryLifecycleService.class);
+        }
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DataSource datasource) {
             var factory = new LocalContainerEntityManagerFactoryBean();
             factory.setDataSource(datasource);
