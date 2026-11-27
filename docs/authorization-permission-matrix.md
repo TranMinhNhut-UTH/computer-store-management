@@ -241,6 +241,7 @@ Permission cho một use case có thể bao gồm side effect nội bộ hợp l
 - **Tác động:** Backend có thể chuẩn bị mapping/guard bốn report và kiểm tra role còn lại bị từ chối. Query triển khai sau chỉ dùng projection tổng hợp; time-boundary theo P07 chưa rõ thì chưa mở filter đó. Frontend chưa cung cấp export/drill-down hoặc report lợi nhuận. Nghiệp vụ giữ công thức doanh thu COMPLETED trừ return CONFIRMED.
 - **Trạng thái:** Manager-only và loại báo cáo là BASELINE; field/filter/drill-down chưa được mô tả phải PROVISIONAL/PENDING — DENY, không mở cả dữ liệu nguồn chỉ vì có REPORT_READ.
 - **APPROVED — Inventory Movement History V1:** Chủ dự án duyệt báo cáo chỉ đọc theo quyền MANAGER Reports hiện có. Projection gồm SKU, tên sản phẩm, loại biến động, số lượng có dấu và thời điểm ghi nhận. Bộ lọc ngày theo lịch Việt Nam, hai đầu bao gồm ngày đã chọn. Không cấp `INVENTORY_LEDGER_READ`. Các phạm vi D07/D12 khác giữ nguyên. Xem [Reports API](basic-reports-api.md#inventory-movement-history-v1).
+- **APPROVED — Product Stock Visibility V1:** Chủ dự án duyệt tra cứu số dư, ngưỡng và trạng thái tồn của từng sản phẩm đang kinh doanh trong chi tiết Product theo quyền MANAGER Reports hiện có. `PRODUCT_READ` riêng lẻ không cấp quyền này. `INVENTORY_READ` vẫn chờ phê duyệt. Xem [Reports API](basic-reports-api.md#product-stock-visibility-v1).
 
 ### D08 — ADMIN có quyền nghiệp vụ nào?
 

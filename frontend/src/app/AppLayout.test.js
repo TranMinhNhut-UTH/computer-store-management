@@ -7,6 +7,7 @@ import { createElement, act } from 'react'
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
 let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
 let createRoot, passwordStatus, inventoryResponse, movementResponse
+let productResponse, productStockResponse
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
@@ -52,6 +53,7 @@ before(async () => {
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
     if (url.startsWith('/api/v1/reports/inventory?')) return inventoryResponse(new URL(url, 'http://localhost').searchParams)
+    if (url.startsWith('/api/v1/reports/inventory/products/') && productStockResponse) return productStockResponse(url)
     if (url.startsWith('/api/v1/reports/inventory/movements?')) {
       return movementResponse(new URL(url, 'http://localhost').searchParams)
     }
@@ -61,6 +63,7 @@ before(async () => {
         : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     }
     if (url.startsWith('/api/v1/categories')) return Response.json({ code: categoryStatus === 401 ? 'UNAUTHENTICATED' : 'ACCESS_DENIED' }, { status: categoryStatus })
+    if (url.startsWith('/api/v1/products') && productResponse) return productResponse(url)
     if (url.startsWith('/api/v1/products') || url.startsWith('/api/v1/suppliers') || url.startsWith('/api/v1/customers')) return Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     throw new Error('Unexpected request')
   }
@@ -78,6 +81,8 @@ beforeEach(() => {
   loginAccepted = true
   passwordStatus = 204
   reportAccess = false
+  productResponse = null
+  productStockResponse = null
   capabilities = ['CATEGORY_READ', 'PRODUCT_READ', 'SUPPLIER_READ', 'CUSTOMER_READ']
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   inventoryResponse = params => Response.json({
@@ -263,6 +268,32 @@ test('the authenticated shell navigates between Category, Product, Supplier and 
     assert.equal(requests.filter(request => request.url.startsWith('/api/v1/' + module)).length, 1)
   }
   assert.equal(requests.filter(request => request.url.endsWith('/me')).length, 1)
+})
+
+test('Product stock requests require the authenticated shell Reports capability and an open detail', async () => {
+  authenticated = true
+  window.history.replaceState(null, '', '/products')
+  const record = { id: '9007199254740993', sku: 'CPU', name: 'Bộ xử lý', categoryId: '7', categoryName: 'Linh kiện',
+    brandName: null, modelCode: null, description: null, sellingPrice: '100', minStockLevel: '2', active: true,
+    createdAt: '2026-11-21T17:00:00Z', updatedAt: '2026-11-22T06:45:00Z' }
+  productResponse = url => url.includes('?')
+    ? Response.json({ items: [record], page: 0, size: 20, totalElements: 1, totalPages: 1 })
+    : Response.json(record)
+  const stockPath = '/api/v1/reports/inventory/products/' + record.id
+  productStockResponse = () => Response.json({ productId: record.id, sku: record.sku, productName: record.name,
+    quantityOnHand: '0', minStockLevel: '2', stockStatus: 'OUT_OF_STOCK' })
+
+  for (const allowed of [false, true]) {
+    reportAccess = allowed
+    await render()
+    assert.equal(requests.filter(request => request.url === stockPath).length, 0)
+    await click(container.querySelector('[aria-label="Xem sản phẩm CPU"]'))
+    assert.equal(requests.filter(request => request.url === stockPath).length, allowed ? 1 : 0)
+    if (allowed) assert.match(container.querySelector('.product-stock').textContent, /Hết hàng/)
+    else assert.equal(container.querySelector('.product-stock'), null)
+    await act(async () => root.unmount())
+    root = createRoot(container)
+  }
 })
 
 test('sidebar uses server read grants and unfinished modules are absent from navigation', async () => {
