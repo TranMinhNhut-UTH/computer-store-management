@@ -13,6 +13,7 @@ import { SupplierPage } from '../features/suppliers/SupplierPage.jsx'
 import { CustomerPage } from '../features/customers/CustomerPage.jsx'
 import { StaffPage } from '../features/employees/StaffPage.jsx'
 import { ReportsPage } from '../features/reports/ReportsPage.jsx'
+import { InventoryPage } from '../features/inventory/InventoryPage.jsx'
 import { AccountSecurityPage } from '../features/account/AccountSecurityPage.jsx'
 import { getUiCapabilities } from '../api/uiCapabilities.js'
 import { LoadingState } from '../components/ui/LoadingState.jsx'
@@ -20,7 +21,7 @@ import { reportsClient } from '../api/reports.js'
 import './shell.css'
 import '../components/ui/ui.css'
 
-const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage, reports: ReportsPage, employees: StaffPage }
+const businessPages = { categories: CategoryPage, products: ProductPage, suppliers: SupplierPage, customers: CustomerPage, reports: ReportsPage, employees: StaffPage, inventory: InventoryPage }
 
 const tabletQuery = '(min-width: 768px)'
 const desktopQuery = '(min-width: 1024px)'

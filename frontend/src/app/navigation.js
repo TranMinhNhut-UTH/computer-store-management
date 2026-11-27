@@ -6,7 +6,7 @@ export const navigationGroups = [
     { id: 'suppliers', label: 'Nhà cung cấp', permission: 'SUPPLIER_READ' }, { id: 'customers', label: 'Khách hàng', permission: 'CUSTOMER_READ' },
   ] },
   { label: 'Giao dịch & kho', items: [
-    { id: 'inventory', label: 'Kho hàng' }, { id: 'purchases', label: 'Nhập hàng' },
+    { id: 'inventory', label: 'Kho hàng', permission: 'INVENTORY_READ' }, { id: 'purchases', label: 'Nhập hàng' },
     { id: 'sales', label: 'Bán hàng' }, { id: 'payments', label: 'Thanh toán' },
     { id: 'returns', label: 'Trả hàng' }, { id: 'refunds', label: 'Hoàn tiền' },
     { id: 'stocktake', label: 'Kiểm kê' }, { id: 'adjustments', label: 'Điều chỉnh tồn kho' },

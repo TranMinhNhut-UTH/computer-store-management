@@ -6,7 +6,7 @@ import { createElement, act } from 'react'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
 let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
-let createRoot, passwordStatus, inventoryResponse, movementResponse
+let createRoot, passwordStatus, inventoryResponse, balanceResponse, movementResponse
 let productResponse, productStockResponse
 let modules
 let viewportWidth = 1440
@@ -53,6 +53,8 @@ before(async () => {
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
     if (url.startsWith('/api/v1/reports/inventory?')) return inventoryResponse(new URL(url, 'http://localhost').searchParams)
+    if (url.startsWith('/api/v1/inventory/balances?')) return balanceResponse(new URL(url, 'http://localhost').searchParams)
+    if (url.startsWith('/api/v1/inventory/movements?')) return movementResponse(new URL(url, 'http://localhost').searchParams)
     if (url.startsWith('/api/v1/reports/inventory/products/') && productStockResponse) return productStockResponse(url)
     if (url.startsWith('/api/v1/reports/inventory/movements?')) {
       return movementResponse(new URL(url, 'http://localhost').searchParams)
@@ -87,6 +89,9 @@ beforeEach(() => {
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   inventoryResponse = params => Response.json({
     summary: { activeSkus: 0, totalQuantity: '0', outOfStockSkus: 0, lowStockSkus: 0 },
+    items: [], page: Number(params.get('page')), size: 20, totalElements: 0, totalPages: 0,
+  })
+  balanceResponse = params => Response.json({
     items: [], page: Number(params.get('page')), size: 20, totalElements: 0, totalPages: 0,
   })
   movementResponse = params => Response.json({
@@ -304,7 +309,7 @@ test('sidebar uses server read grants and unfinished modules are absent from nav
   assert.ok(container.querySelector('.csm-username').textContent.includes('test-employee'))
   assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'categories', 'products', 'account-security'])
   assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
-  assert.match(container.querySelector('.csm-empty').textContent, /Chưa|chưa/)
+  assert.match(container.querySelector('[role=alert]').textContent, /không có quyền/)
   assert.ok(requests.every(request => request.url.includes('/auth/') || request.url.endsWith('/reports/access')))
   assert.equal(container.querySelector('#password'), null)
   assert.equal(container.textContent.includes('test-token'), false)
@@ -317,6 +322,24 @@ test('signed-in account without read grants sees only overview even if an action
   assert.deepEqual([...container.querySelectorAll('[data-nav-id]')].map(node => node.dataset.navId), ['overview', 'account-security'])
   assert.match(container.querySelector('main').textContent, /chưa có quyền/)
   assert.equal(requests.filter(request => request.url.endsWith('/ui-capabilities')).length, 1)
+})
+
+test('Inventory page uses server capabilities for navigation and loads read-only tabs', async () => {
+  authenticated = true
+  capabilities = ['INVENTORY_READ', 'INVENTORY_LEDGER_READ']
+  window.history.replaceState(null, '', '/inventory')
+  await render()
+
+  assert.ok(container.querySelector('[data-nav-id="inventory"]'))
+  assert.equal(container.querySelector('#page-title').textContent, 'Kho hàng')
+  assert.equal(container.querySelector('[role=tab][aria-selected="true"]').textContent, 'Tồn kho')
+  assert.match(container.querySelector('.csm-empty').textContent, /Chưa có tồn kho/)
+  assert.ok(requests.some(request => request.url.startsWith('/api/v1/inventory/balances?page=0&size=20&filter=ALL')))
+
+  await click(container.querySelector('#inventory-tab-movements'))
+  assert.equal(container.querySelector('[role=tab][aria-selected="true"]').textContent, 'Lịch sử biến động')
+  assert.match(container.querySelector('.csm-empty').textContent, /Không có biến động/)
+  assert.ok(requests.some(request => request.url.startsWith('/api/v1/inventory/movements?page=0&size=20')))
 })
 
 test('theme toggles persist across shell navigation', async () => {

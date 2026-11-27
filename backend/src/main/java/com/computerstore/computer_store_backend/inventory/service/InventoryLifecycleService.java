@@ -3,8 +3,11 @@ package com.computerstore.computer_store_backend.inventory.service;
 import com.computerstore.computer_store_backend.catalog.entity.Product;
 import com.computerstore.computer_store_backend.inventory.entity.Inventory;
 import com.computerstore.computer_store_backend.inventory.repository.InventoryRepository;
+import com.computerstore.computer_store_backend.shared.error.BusinessException;
+import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.time.UtcTimeProvider;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,13 @@ public class InventoryLifecycleService {
 
     @Transactional
     public Inventory initializeForNewProduct(Product product) {
+        if (product == null || product.getId() == null) {
+            throw new IllegalStateException("Inventory requires an already-persisted Product.");
+        }
+        if (inventoryRepository.existsByProductId(product.getId())) {
+            throw new BusinessException(ErrorCode.BUSINESS_CONFLICT,
+                    "An inventory row already exists for this product.");
+        }
         Inventory inventory = BeanUtils.instantiateClass(Inventory.class);
         inventory.setProduct(product);
         inventory.setQuantityOnHand(0L);
@@ -37,6 +47,11 @@ public class InventoryLifecycleService {
         inventory.setCreatedAt(now);
         inventory.setUpdatedAt(now);
 
-        return inventoryRepository.save(inventory);
+        try {
+            return inventoryRepository.saveAndFlush(inventory);
+        } catch (DataIntegrityViolationException failure) {
+            throw new BusinessException(ErrorCode.BUSINESS_CONFLICT,
+                    "An inventory row already exists for this product.");
+        }
     }
 }

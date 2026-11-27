@@ -70,6 +70,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/suppliers", "/api/v1/suppliers/{id}").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/v1/suppliers", "/api/v1/suppliers/{id}/deactivate").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/suppliers/{id}").authenticated();
+                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/inventory/balances",
+                                    "/api/v1/inventory/movements")
+                            .authenticated();
                     if (customerReleased) {
                         authorize.requestMatchers(HttpMethod.GET, "/api/v1/customers", "/api/v1/customers/{id}").authenticated()
                                 .requestMatchers(HttpMethod.POST, "/api/v1/customers").authenticated()
