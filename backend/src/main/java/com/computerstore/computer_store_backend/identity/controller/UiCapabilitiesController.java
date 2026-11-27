@@ -15,7 +15,8 @@ import static com.computerstore.computer_store_backend.identity.authorization.Pe
 public class UiCapabilitiesController {
     private static final List<PermissionCode> UI_CODES = List.of(
             CATEGORY_READ, CATEGORY_CREATE, CATEGORY_UPDATE, CATEGORY_DEACTIVATE,
-            PRODUCT_READ, PRODUCT_CREATE, PRODUCT_PRICE_UPDATE, SUPPLIER_READ, CUSTOMER_READ);
+            PRODUCT_READ, PRODUCT_CREATE, PRODUCT_PRICE_UPDATE, SUPPLIER_READ, CUSTOMER_READ,
+            INVENTORY_READ, INVENTORY_LEDGER_READ);
     private final RoleResolutionService roles;
     private final boolean staffManagement;
 

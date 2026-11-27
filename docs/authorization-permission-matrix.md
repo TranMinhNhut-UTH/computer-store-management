@@ -2,6 +2,8 @@
 
 **Quyết định riêng Category V1 — theo yêu cầu Category Integration tại ce5019d:** chọn MANAGER → CATEGORY_READ/CREATE/UPDATE/DEACTIVATE; SALES_STAFF và WAREHOUSE_STAFF → CATEGORY_READ; không thêm quyền Category cho ADMIN. Đây là policy được chọn cho đúng slice Category, thay trạng thái đề xuất của bốn dòng Category trong snapshot bên dưới; không approve các phần khác của matrix, không đổi 60 codes/9 PROVISIONAL_DENY, không phải phê duyệt thực thi DB. Source chuẩn bị exact manifest: CategoryPermissionRollout; chưa có runtime grants.
 
+**Quyết định quyền đọc Inventory — TV1 xác nhận 2026-11-27:** `INVENTORY_READ` được cấp theo mapping ADMIN, MANAGER, SALES_STAFF và WAREHOUSE_STAFF; `INVENTORY_LEDGER_READ` được cấp cho MANAGER và WAREHOUSE_STAFF. Quyết định này ghi nhận policy cho đúng hai quyền phục vụ INV-001/002 và supersedes ý nghĩa P chung tại các ô của hai dòng này. Không có nghĩa role-grant đã được seed/triển khai vào database; rollout runtime được theo dõi riêng.
+
 Ngày 2026-11-21; branch `feature/authorization`, source đối chiếu tại `2e152a3` (Authorization Foundation Part 3A). Bản hoàn thiện Part 3B-1 phân biệt **BASELINE**, **USER-REQUIRED** (yêu cầu nhiều ADMIN trong nhiệm vụ hiện tại) và **PROVISIONAL/PENDING — DENY**. Giữ 60 tên permission đề xuất; không tự chuyển catalog thành APPROVED. Phần có căn cứ có thể làm nền tảng Part 3B-2 khi được giao triển khai, không chờ TV2 hoàn thành module; phần thiếu contract tiếp tục bị từ chối. Part 3B-2A đã thêm catalog/policy guard và isolated tests local (mục 10); chưa seed permission/role_permission, tích hợp enforcement vào business API hoặc mở API nghiệp vụ.
 
 ## 1. Nguồn và hiện trạng đã xác minh

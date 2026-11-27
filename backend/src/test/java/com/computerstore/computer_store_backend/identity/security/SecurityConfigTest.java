@@ -75,7 +75,23 @@ class SecurityConfigTest {
         mvc.perform(get(path).with(user("fixture")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.permissions").value(contains("CATEGORY_READ", "CUSTOMER_READ")));
+        when(roles.resolveCurrent()).thenReturn(new ResolvedAccess(actor, Set.of(EmployeeRole.WAREHOUSE_STAFF),
+                Set.of("INVENTORY_READ", "INVENTORY_LEDGER_READ")));
+        mvc.perform(get(path).with(user("fixture")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions").value(contains("INVENTORY_READ", "INVENTORY_LEDGER_READ")));
         mvc.perform(post(path).with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
+    }
+
+    @Test void inventoryReadRoutesRequireAuthenticationAndKeepReadOnlyMethodPolicy() throws Exception {
+        mvc.perform(get("/api/v1/inventory/balances")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/inventory/movements")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/inventory/balances").with(user("fixture")))
+                .andExpect(status().isOk()).andExpect(content().string("inventory read fixture"));
+        mvc.perform(get("/api/v1/inventory/movements").with(user("fixture")))
+                .andExpect(status().isOk()).andExpect(content().string("inventory read fixture"));
+        mvc.perform(post("/api/v1/inventory/balances").with(user("fixture")).with(csrf()))
+                .andExpect(status().isForbidden());
     }
 
     @Test void staffRoutesAndCapabilityAreClosedByDefault() throws Exception {
@@ -209,12 +225,20 @@ class SecurityConfigTest {
     @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
             EmployeeUserDetailsService.class, HealthController.class, PrivateFixture.class,
+            InventoryReadFixture.class,
             UserDetailsServiceAutoConfiguration.class, UiCapabilitiesController.class})
     static class FixtureConfig {
         @Bean RoleResolutionService roles() { return mock(RoleResolutionService.class); }
         @Bean AppUserRepository appUserRepository() {
             return org.mockito.Mockito.mock(AppUserRepository.class);
         }
+
+    }
+
+    @RestController
+    static class InventoryReadFixture {
+        @GetMapping({"/api/v1/inventory/balances", "/api/v1/inventory/movements"})
+        String read() { return "inventory read fixture"; }
     }
 
     @RestController
