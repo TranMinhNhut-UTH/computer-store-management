@@ -6,13 +6,13 @@ import { createElement, act } from 'react'
 
 // Test-only sessions/fetch and dialog adapter. No real account or HTTP request is used.
 let server, dom, App, ThemeProvider, root, container, authenticated, requests, reportAccess, reportResponse, capabilities, categoryStatus, loginAccepted
-let createRoot, passwordStatus, inventoryResponse
+let createRoot, passwordStatus, inventoryResponse, movementResponse
 let modules
 let viewportWidth = 1440
 const mediaQueries = new Map()
 before(async () => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost:5173' })
-  for (const name of ['window', 'document', 'HTMLElement', 'localStorage']) {
+  for (const name of ['window', 'document', 'HTMLElement', 'localStorage', 'FormData']) {
     Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] })
   }
   ;({ createRoot } = await import('react-dom/client'))
@@ -52,6 +52,9 @@ before(async () => {
     if (url.endsWith('/reports/access')) return reportAccess ? new Response(null, { status: 204 }) : Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
     if (url.endsWith('/reports/overview')) return reportResponse()
     if (url.startsWith('/api/v1/reports/inventory?')) return inventoryResponse(new URL(url, 'http://localhost').searchParams)
+    if (url.startsWith('/api/v1/reports/inventory/movements?')) {
+      return movementResponse(new URL(url, 'http://localhost').searchParams)
+    }
     if (url.startsWith('/api/v1/employees')) {
       return capabilities.includes('EMPLOYEE_READ')
         ? Response.json({ items: [], page: 0, size: 20, totalPages: 0, totalElements: 0, allowedActions: [] })
@@ -79,6 +82,9 @@ beforeEach(() => {
   reportResponse = () => Response.json({ code: 'ACCESS_DENIED' }, { status: 403 })
   inventoryResponse = params => Response.json({
     summary: { activeSkus: 0, totalQuantity: '0', outOfStockSkus: 0, lowStockSkus: 0 },
+    items: [], page: Number(params.get('page')), size: 20, totalElements: 0, totalPages: 0,
+  })
+  movementResponse = params => Response.json({
     items: [], page: Number(params.get('page')), size: 20, totalElements: 0, totalPages: 0,
   })
   viewportWidth = 1440
@@ -536,6 +542,7 @@ test('reports recover from a network error and distinguish an empty database', a
   await click(container.querySelector('.reports-page button'))
   assert.match(container.querySelector('.reports-page .csm-empty').textContent, /Chưa có danh mục/)
   assert.match(container.querySelector('.reports-page').textContent, /Không có sản phẩm tồn thấp/)
+  assert.match(container.querySelector('.reports-page').textContent, /Không có biến động kho được ghi nhận/)
   assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
   assert.equal(container.querySelector('.reports-page table'), null)
 })
@@ -599,6 +606,49 @@ test('inventory reports switch filters from a later page, preserve exact stock a
   assert.match(region.querySelector('[role=alert]').textContent, /chưa có số dư tồn kho/)
   assert.equal(region.querySelector('.reports-inventory-metrics'), null)
   assert.equal(container.querySelectorAll('.reports-kpi').length, 4)
+})
+
+test('movement reports display signed quantities and apply Vietnam date filters from page one', async () => {
+  authenticated = true
+  reportAccess = true
+  window.history.replaceState(null, '', '/reports')
+  const zero = { total: 0, active: 0, inactive: 0 }
+  reportResponse = () => Response.json({
+    products: zero, categories: zero, suppliers: zero, customers: zero, productsByCategory: [],
+  })
+  movementResponse = params => {
+    const page = Number(params.get('page'))
+    const filtered = params.has('q')
+    return Response.json({
+      items: Array.from({ length: filtered ? 0 : page ? 1 : 20 }, () => ({
+        sku: 'P_1', productName: 'Linh kiện', movementType: page ? 'PURCHASE_IN' : 'SALE_OUT',
+        quantityDelta: page ? '9007199254740993' : '-9007199254740993', occurredAt: '2026-11-26T17:00:00Z',
+      })),
+      page, size: 20, totalElements: filtered ? 0 : 21, totalPages: filtered ? 0 : 2,
+    })
+  }
+  await render()
+  const region = container.querySelector('[aria-labelledby="reports-movements"]')
+  assert.match(region.querySelector('tbody').textContent, /00:00 27\/11\/2026.*Xuất bán-9\.007\.199\.254\.740\.993/)
+  const button = text => [...region.querySelectorAll('button')].find(node => node.textContent === text)
+  await click(button('Trang sau'))
+  assert.match(region.querySelector('tbody').textContent, /Nhập hàng\+9\.007\.199\.254\.740\.993/)
+  const form = region.querySelector('form')
+  form.elements.q.value = 'P_1'
+  form.elements.type.value = 'SALE_OUT'
+  form.elements.fromDate.value = '2026-11-28'
+  form.elements.toDate.value = '2026-11-27'
+  const before = requests.length
+  await click(button('Áp dụng bộ lọc'))
+  assert.equal(requests.length, before)
+  assert.match(region.textContent, /Ngày kết thúc phải từ ngày bắt đầu/)
+  form.elements.fromDate.value = '2026-11-27'
+  await click(button('Áp dụng bộ lọc'))
+  const params = new URL(requests.at(-1).url, 'http://localhost').searchParams
+  assert.deepEqual(Object.fromEntries(params), {
+    page: '0', size: '20', q: 'P_1', type: 'SALE_OUT', fromDate: '2026-11-27', toDate: '2026-11-27',
+  })
+  assert.match(region.textContent, /Không có biến động kho được ghi nhận/)
 })
 
 test('staff navigation and deep links respect the server capability and API denial', async () => {

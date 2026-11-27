@@ -3,6 +3,10 @@ import { ApiError, createApiTransport, validateListPage } from './client.js'
 const base = '/api/v1/reports'
 
 export const overviewKeys = ['products', 'categories', 'suppliers', 'customers']
+export const movementLabels = {
+  PURCHASE_IN: 'Nhập hàng', SALE_OUT: 'Xuất bán', RETURN_IN: 'Nhập hàng trả',
+  ADJUSTMENT_IN: 'Điều chỉnh tăng', ADJUSTMENT_OUT: 'Điều chỉnh giảm', SALE_CANCEL_IN: 'Nhập lại do hủy đơn',
+}
 
 const isCount = value => Number.isSafeInteger(value) && value >= 0
 const isBreakdown = value => [value?.total, value?.active, value?.inactive].every(isCount)
@@ -43,6 +47,21 @@ export function createReportsClient(fetchRequest) {
           || !isQuantity(summary.totalQuantity) || summary.outOfStockSkus > summary.lowStockSkus
           || summary.lowStockSkus > summary.activeSkus || total !== data.totalElements
           || !data.items.every(row => isStockProduct(row, filter))) throw new ApiError(502)
+      return data
+    },
+    async getMovements({ page = 0, size = 20, q, type, fromDate, toDate } = {}, options) {
+      const params = new URLSearchParams({ page: String(page), size: String(size) })
+      for (const [key, value] of Object.entries({ q, type, fromDate, toDate })) {
+        if (value) params.set(key, value)
+      }
+      const data = await request(base + '/inventory/movements?' + params, options)
+      validateListPage(data, page, size)
+      if (!data.items.every(row => typeof row?.sku === 'string' && typeof row.productName === 'string'
+          && Object.hasOwn(movementLabels, row.movementType)
+          && typeof row.quantityDelta === 'string' && /^-?[1-9][0-9]*$/.test(row.quantityDelta)
+          && typeof row.occurredAt === 'string' && Number.isFinite(Date.parse(row.occurredAt)))) {
+        throw new ApiError(502)
+      }
       return data
     },
   }
