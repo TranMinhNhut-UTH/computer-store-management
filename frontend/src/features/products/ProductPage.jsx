@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { productClient } from '../../api/products.js'
+import { reportsClient } from '../../api/reports.js'
 import { categoryClient } from '../../api/categories.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
@@ -21,6 +22,47 @@ const titles = { create: 'Tạo sản phẩm', detail: 'Chi tiết sản phẩm'
 const permissionByAction = { create: 'PRODUCT_CREATE', edit: 'PRODUCT_UPDATE', price: 'PRODUCT_PRICE_UPDATE', deactivate: 'PRODUCT_DEACTIVATE' }
 const digits = new Intl.NumberFormat('vi-VN')
 const money = value => `${digits.format(BigInt(value))} ₫`
+const stockStatus = {
+  OUT_OF_STOCK: { label: 'Hết hàng', variant: 'error' },
+  LOW_STOCK: { label: 'Tồn thấp', variant: 'warning' },
+  NORMAL: { label: 'Bình thường', variant: 'success' },
+}
+
+function ProductStock({ productId, active, client }) {
+  const [attempt, setAttempt] = useState(0)
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    if (!active) return
+    const controller = new AbortController()
+    client.getProductStock(productId, { signal: controller.signal }).then(
+      stock => { if (!controller.signal.aborted) setResult({ attempt, stock }) },
+      error => { if (!controller.signal.aborted) setResult({ attempt, error }) },
+    )
+    return () => controller.abort()
+  }, [active, attempt, client, productId])
+
+  const current = result?.attempt === attempt ? result : null
+  const stock = current?.stock
+  const error = current?.error
+  const status = stock && stockStatus[stock.stockStatus]
+  const unavailable = !active || error?.status === 404
+  return <section className="product-stock" aria-labelledby="product-stock-title">
+    <h3 id="product-stock-title">Tồn kho hiện tại</h3>
+    {unavailable ? <p className="csm-muted">Không có dữ liệu tồn kho cho sản phẩm này.</p>
+      : !current ? <LoadingState label="Đang tải tồn kho…" />
+      : error ? <ListError status={error.status} onRetry={() => setAttempt(value => value + 1)}
+        message={error.status === 409 ? 'Sản phẩm chưa có số dư tồn kho.'
+          : error.status === 401 ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+          : error.status === 403 ? 'Tài khoản hiện không có quyền xem tồn kho.'
+          : 'Không thể tải tồn kho.'} />
+      : <dl className="product-detail">
+        <dt>Số lượng hiện tại</dt><dd>{digits.format(BigInt(stock.quantityOnHand))}</dd>
+        <dt>Ngưỡng tồn thấp</dt><dd>{digits.format(BigInt(stock.minStockLevel))}</dd>
+        <dt>Trạng thái tồn kho</dt><dd><StatusBadge variant={status.variant}>{status.label}</StatusBadge></dd>
+      </dl>}
+  </section>
+}
 
 function errorMessage(failure, action) {
   switch (failure.status) {
@@ -87,7 +129,8 @@ function CategoryPicker({ client, current, value, onChange, error }) {
   </div>
 }
 
-export function ProductPage({ client = productClient, categories = categoryClient }) {
+export function ProductPage({ client = productClient, categories = categoryClient,
+  stockClient = reportsClient, canViewStock = false }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', active: '', page: 0, size: 20 })
   const [refresh, refreshList] = useState(0)
@@ -242,10 +285,13 @@ export function ProductPage({ client = productClient, categories = categoryClien
             <dt>SKU</dt><dd>{modal.record.sku}</dd><dt>Tên</dt><dd>{modal.record.name}</dd>
             <dt>Danh mục</dt><dd>{modal.record.categoryName}</dd><dt>Hãng</dt><dd>{modal.record.brandName || '—'}</dd>
             <dt>Model</dt><dd>{modal.record.modelCode || '—'}</dd><dt>Mô tả</dt><dd>{modal.record.description || '—'}</dd>
-            <dt>Giá bán</dt><dd>{money(modal.record.sellingPrice)}</dd><dt>Ngưỡng tồn thấp</dt><dd>{digits.format(BigInt(modal.record.minStockLevel))}</dd>
+            <dt>Giá bán</dt><dd>{money(modal.record.sellingPrice)}</dd>
+            {(!canViewStock || !modal.record.active) && <><dt>Ngưỡng tồn thấp</dt><dd>{digits.format(BigInt(modal.record.minStockLevel))}</dd></>}
             <dt>Trạng thái</dt><dd>{modal.record.active ? 'Đang kinh doanh' : 'Ngừng kinh doanh'}</dd>
             <dt>Ngày tạo</dt><dd>{formatVietnameseDate(modal.record.createdAt)}</dd>
           </dl>
+          {canViewStock && <ProductStock key={modal.record.id} productId={modal.record.id}
+            active={modal.record.active} client={stockClient} />}
           <Button data-initial-focus variant="secondary" onClick={close}>Đóng chi tiết</Button>
         </> : fieldsVisible && <form ref={form} onSubmit={submit} noValidate aria-busy={saving}>
           {action === 'deactivate' ? <p><strong>{modal.record.name}</strong> sẽ ngừng kinh doanh và vẫn được lưu trong lịch sử.</p>

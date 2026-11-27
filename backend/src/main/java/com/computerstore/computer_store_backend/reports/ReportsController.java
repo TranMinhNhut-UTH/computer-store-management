@@ -2,6 +2,7 @@ package com.computerstore.computer_store_backend.reports;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -34,6 +35,11 @@ public class ReportsController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "LOW") InventoryReport.StockFilter filter) {
         return reports.inventory(page, size, filter);
+    }
+
+    @GetMapping("/inventory/products/{productId}")
+    public ProductStockReport productStock(@PathVariable String productId) {
+        return reports.productStock(productId);
     }
 
     @GetMapping("/inventory/movements")

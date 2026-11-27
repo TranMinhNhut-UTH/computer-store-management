@@ -120,6 +120,25 @@ public class ReportsRepository {
         }, page.getPageSize(), page.getOffset());
     }
 
+    ProductStockReport productStock(long productId) {
+        return jdbc.query("""
+                SELECT p.id, p.sku, p.name, p.min_stock_level, i.quantity_on_hand
+                FROM product p LEFT JOIN inventory i ON i.product_id = p.id
+                WHERE p.id = ? AND p.is_active = TRUE
+                """, rows -> {
+            if (!rows.next()) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "The active product was not found.");
+            }
+            long quantity = rows.getLong("quantity_on_hand");
+            if (rows.wasNull()) {
+                throw new BusinessException(ErrorCode.BUSINESS_CONFLICT, "The active product has no inventory balance.");
+            }
+            long threshold = rows.getLong("min_stock_level");
+            return new ProductStockReport(rows.getString("id"), rows.getString("sku"), rows.getString("name"),
+                    Long.toString(quantity), Long.toString(threshold), stockStatus(quantity, threshold));
+        }, productId);
+    }
+
     private static StockStatus stockStatus(long quantity, long threshold) {
         if (quantity == 0) return StockStatus.OUT_OF_STOCK;
         return quantity <= threshold ? StockStatus.LOW_STOCK : StockStatus.NORMAL;

@@ -44,4 +44,18 @@ public class ReportsService {
                 () -> new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid report pagination."));
         return reports.inventory(pagination, filter);
     }
+
+    @Transactional(readOnly = true)
+    public ProductStockReport productStock(String productId) {
+        requireOverviewAccess();
+        if (!productId.matches("[1-9][0-9]{0,18}")) throw invalidProductId();
+        long id;
+        try { id = Long.parseLong(productId); }
+        catch (NumberFormatException ignored) { throw invalidProductId(); }
+        return reports.productStock(id);
+    }
+
+    private static BusinessException invalidProductId() {
+        return new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid product id.");
+    }
 }

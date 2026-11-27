@@ -13,14 +13,13 @@ const isBreakdown = value => [value?.total, value?.active, value?.inactive].ever
   && value.total === value.active + value.inactive
 const isQuantity = value => typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)
 
-function isStockProduct(row, filter) {
-  if (!['sku', 'productName', 'categoryName'].every(key => typeof row?.[key] === 'string')
+function isStockBalance(row) {
+  if (!['sku', 'productName'].every(key => typeof row?.[key] === 'string')
       || !isQuantity(row.quantityOnHand) || !isQuantity(row.minStockLevel)) return false
   const quantity = BigInt(row.quantityOnHand)
-  const low = quantity <= BigInt(row.minStockLevel)
-  const status = quantity === 0n ? 'OUT_OF_STOCK' : low ? 'LOW_STOCK' : 'NORMAL'
+  const status = quantity === 0n ? 'OUT_OF_STOCK'
+    : quantity <= BigInt(row.minStockLevel) ? 'LOW_STOCK' : 'NORMAL'
   return row.stockStatus === status
-    && (filter === 'ALL' || (filter === 'LOW' && low) || (filter === 'OUT' && quantity === 0n))
 }
 
 export function createReportsClient(fetchRequest) {
@@ -46,7 +45,15 @@ export function createReportsClient(fetchRequest) {
       if (![summary?.activeSkus, summary?.outOfStockSkus, summary?.lowStockSkus].every(isCount)
           || !isQuantity(summary.totalQuantity) || summary.outOfStockSkus > summary.lowStockSkus
           || summary.lowStockSkus > summary.activeSkus || total !== data.totalElements
-          || !data.items.every(row => isStockProduct(row, filter))) throw new ApiError(502)
+          || !data.items.every(row => typeof row?.categoryName === 'string' && isStockBalance(row)
+            && (filter === 'ALL' || (filter === 'LOW' && row.stockStatus !== 'NORMAL')
+              || (filter === 'OUT' && row.stockStatus === 'OUT_OF_STOCK')))) throw new ApiError(502)
+      return data
+    },
+    async getProductStock(productId, options) {
+      if (typeof productId !== 'string' || !/^[1-9][0-9]{0,18}$/.test(productId)) throw new ApiError(400)
+      const data = await request(`${base}/inventory/products/${productId}`, options)
+      if (data?.productId !== productId || !isStockBalance(data)) throw new ApiError(502)
       return data
     },
     async getMovements({ page = 0, size = 20, q, type, fromDate, toDate } = {}, options) {

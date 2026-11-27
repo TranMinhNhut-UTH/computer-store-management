@@ -11,4 +11,6 @@
 .product-danger.csm-button:not(:disabled):hover { background: var(--csm-error-soft); }
 .product-detail { display: grid; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); gap: var(--csm-space-2); }
 .product-detail dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.product-stock { margin-block: var(--csm-space-4); }
+.product-stock h3 { margin: 0; font-size: var(--csm-font-lg); }
 .product-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

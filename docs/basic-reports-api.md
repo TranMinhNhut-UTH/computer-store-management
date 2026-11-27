@@ -7,6 +7,7 @@
 | GET `/api/v1/reports/access` | `204`. Checks current permissions without running aggregate queries. The signed-in sidebar uses this response. |
 | GET `/api/v1/reports/overview` | `200`. Returns the catalog and partner aggregates described below. |
 | GET `/api/v1/reports/inventory?page=0&size=20&filter=ALL` | `200`. Returns the current stock summary and a paginated Product list. Omitting `filter` returns the low-stock list. |
+| GET `/api/v1/reports/inventory/products/{productId}` | `200`. Returns the stock balance for one active Product. |
 | GET `/api/v1/reports/inventory/movements` | `200`. Returns a paginated projection of recorded inventory movements. |
 
 All report routes require a current authenticated session, a server-resolved `MANAGER` role and **all four** existing read permissions. The server checks each request independently. Anonymous or expired sessions receive `401`. Authenticated sessions that lack the role or any required grant receive `403`. The API has no write operations.
@@ -33,6 +34,12 @@ The reports use the existing grants deployed by V1–V9 and add no permission or
 The optional `filter` accepts `ALL` for all active Products, `LOW` for quantities at or below the threshold (the default), or `OUT` for zero stock. The summary always covers all active Products. `totalElements` and `totalPages` count only matches for the selected filter.
 
 The response retains `items`, `page`, `size`, `totalElements` and `totalPages`. Each item contains `sku`, `productName`, `categoryName`, `quantityOnHand`, `minStockLevel`, and `stockStatus`. The status is `OUT_OF_STOCK` at zero, `LOW_STOCK` for positive quantities at or below the threshold, and `NORMAL` above the threshold. Rows are sorted by SKU and Product ID. Paging is zero-based, with size 1–100 (default 20). Quantities and thresholds are decimal strings to preserve exact BIGINT values and larger totals. The summary, pagination totals and page share one MySQL statement snapshot.
+
+### Product Stock Visibility V1
+
+The project owner approved stock visibility from Product details for employees who pass the existing MANAGER Reports gate. Product Management uses `GET /api/v1/reports/access` to decide whether to request stock and the lookup independently enforces the same four read grants. `INVENTORY_READ` remains pending and the TV2 Inventory routes retain their existing access rules.
+
+The lookup accepts an exact positive decimal Product ID and returns only `productId`, `sku`, `productName`, `quantityOnHand`, `minStockLevel` and `stockStatus`. ID, quantity, and threshold are decimal strings. Status follows the inventory report rules. An invalid ID returns `400`, an unknown or inactive Product returns `404`, and a missing balance for an active Product returns `409 BUSINESS_CONFLICT`. The Product list makes no stock requests.
 
 ## Inventory Movement History V1
 

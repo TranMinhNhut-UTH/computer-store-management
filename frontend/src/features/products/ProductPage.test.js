@@ -68,6 +68,42 @@ test('Product renders list and detail for read-only staff with write actions hid
   await click(byLabel('Xem sản phẩm CPU'))
   assert.match(container.querySelector('dialog').textContent, /Linh kiện.*Brand.*M1/s)
   assert.deepEqual(calls.at(-1), ['detail', product.id])
+  assert.equal(container.querySelector('.product-stock'), null)
+})
+
+test('Product stock loads on opening an authorized detail and preserves exact quantities', async () => {
+  let finish
+  const stockClient = { getProductStock(id) {
+    calls.push(['stock', id])
+    return new Promise(resolve => { finish = resolve })
+  } }
+  await act(async () => root.render(createElement(ProductPage, { client, stockClient, canViewStock: true })))
+  assert.equal(calls.some(([kind]) => kind === 'stock'), false)
+  await click(byLabel('Xem sản phẩm CPU'))
+  const section = container.querySelector('.product-stock')
+  assert.match(section.textContent, /Đang tải tồn kho/)
+  assert.deepEqual(calls.at(-1), ['stock', product.id])
+  await act(async () => finish({ quantityOnHand: '9007199254740993', minStockLevel: '9007199254740993', stockStatus: 'LOW_STOCK' }))
+  assert.match(section.textContent, /9\.007\.199\.254\.740\.993/)
+  assert.equal(section.querySelector('.csm-badge--warning').textContent, 'Tồn thấp')
+})
+
+test('Product stock distinguishes missing balance, unavailable data and access errors', async () => {
+  let status
+  const stockClient = { async getProductStock() { throw { status } } }
+  await act(async () => root.render(createElement(ProductPage, { client, stockClient, canViewStock: true })))
+  for (const [code, message] of [
+    [404, /Không có dữ liệu/], [409, /chưa có số dư/], [500, /Không thể tải/],
+    [403, /không có quyền/], [401, /Phiên đăng nhập đã hết hạn/],
+  ]) {
+    status = code
+    await click(byLabel('Xem sản phẩm CPU'))
+    const section = container.querySelector('.product-stock')
+    assert.match(section.textContent, message)
+    assert.equal(section.querySelector('dd'), null)
+    if (code === 401 || code === 403) assert.equal(section.querySelector('button'), null)
+    await click(button('Đóng chi tiết'))
+  }
 })
 
 test('Product enables only the specific write action reported by the server', async () => {
