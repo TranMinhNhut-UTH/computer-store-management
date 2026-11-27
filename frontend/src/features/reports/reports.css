@@ -37,3 +37,13 @@
 .reports-stock-table :is(th, td):nth-child(2) { text-align: left; overflow-wrap: anywhere; }
 .reports-stock-table td:last-child { white-space: nowrap; }
 .reports-stock-filter { max-width: 16rem; margin-block: var(--csm-space-4); }
+.reports-movement-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: var(--csm-space-3);
+  margin-block: var(--csm-space-4);
+}
+.reports-movement-filters :is(input, select) { width: 100%; min-width: 0; }
+.reports-movements-table td:first-child { text-align: left; white-space: nowrap; }
+.reports-movements-table :is(th, td):nth-child(3) { text-align: left; }

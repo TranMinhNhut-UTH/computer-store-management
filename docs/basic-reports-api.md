@@ -7,6 +7,7 @@
 | GET `/api/v1/reports/access` | `204`. Checks current permissions without running aggregate queries. The signed-in sidebar uses this response. |
 | GET `/api/v1/reports/overview` | `200`. Returns the catalog and partner aggregates described below. |
 | GET `/api/v1/reports/inventory?page=0&size=20&filter=ALL` | `200`. Returns the current stock summary and a paginated Product list. Omitting `filter` returns the low-stock list. |
+| GET `/api/v1/reports/inventory/movements` | `200`. Returns a paginated projection of recorded inventory movements. |
 
 All report routes require a current authenticated session, a server-resolved `MANAGER` role and **all four** existing read permissions. The server checks each request independently. Anonymous or expired sessions receive `401`. Authenticated sessions that lack the role or any required grant receive `403`. The API has no write operations.
 
@@ -33,12 +34,22 @@ The optional `filter` accepts `ALL` for all active Products, `LOW` for quantitie
 
 The response retains `items`, `page`, `size`, `totalElements` and `totalPages`. Each item contains `sku`, `productName`, `categoryName`, `quantityOnHand`, `minStockLevel`, and `stockStatus`. The status is `OUT_OF_STOCK` at zero, `LOW_STOCK` for positive quantities at or below the threshold, and `NORMAL` above the threshold. Rows are sorted by SKU and Product ID. Paging is zero-based, with size 1–100 (default 20). Quantities and thresholds are decimal strings to preserve exact BIGINT values and larger totals. The summary, pagination totals and page share one MySQL statement snapshot.
 
+## Inventory Movement History V1
+
+The project owner approved this limited D07/D12 projection under the existing MANAGER Reports policy. No `INVENTORY_LEDGER_READ` grant or migration is required. Other drill-down and projection decisions remain pending.
+
+The report returns only `sku`, `productName`, `movementType`, `quantityDelta` (a signed decimal string), and `occurredAt` (an ISO 8601 UTC timestamp). It reads existing ledger entries joined to the current Product name and SKU. The response excludes operator, customer and source IDs, notes, and resulting balances. An empty page means there are no recorded entries matching the request. Balances and Product creation do not generate history.
+
+Optional `q` matches the Product name or SKU (literal substring, up to 200 characters). Optional `type` accepts the existing `PURCHASE_IN`, `SALE_OUT`, `RETURN_IN`, `ADJUSTMENT_IN`, `ADJUSTMENT_OUT` and `SALE_CANCEL_IN` values. `fromDate` and `toDate` are inclusive Vietnam calendar dates (`YYYY-MM-DD`, `Asia/Ho_Chi_Minh`). Either may be omitted. The server converts the start and the start of the day after the end date to UTC for the query. Invalid dates, inverted ranges and unknown types return `400 VALIDATION_ERROR`.
+
+Paging is zero-based with size 1–100 (default 20) and the standard `items/page/size/totalElements/totalPages` fields. Results are ordered by occurrence time descending, then ledger ID descending. The ledger ID stays internal. The page and count share a repeatable-read database snapshot.
+
 ## TV2 handoff and deferred metrics
 
 | Pending reports | Readiness prerequisite |
 |---|---|
 | Net revenue, units sold and units returned | `DEP-008`, `SAL-001/002`, `PAY-001/002` and `RET-001`. Reconcile fixtures covering completed and canceled orders, confirmed returns and refunds. Apply the approved formula of completed-order revenue minus confirmed-return value, without subtracting cash refunds again. Establish the report period and timezone boundary under P07 before releasing a date filter. |
-| Movement history | `INV-002` and reconciled movement/transaction data from TV2. Current balances and low-stock reports are implemented independently. |
+| Ledger population | TV2 workflows supply the recorded movements. Current balances, low-stock reporting and the movement report read existing data independently. |
 
 TV2 owns the source workflows and data reconciliation. TV1 owns the report projection, authorization and UI. Profit, bulk export and transaction drill-down are outside this delivery.
 

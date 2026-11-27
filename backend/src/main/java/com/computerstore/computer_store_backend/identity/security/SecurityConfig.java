@@ -82,7 +82,7 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.PUT, "/api/v1/employees/{id}", "/api/v1/employees/{id}/roles").authenticated();
                     }
                     authorize.requestMatchers(HttpMethod.GET, "/api/v1/reports/access", "/api/v1/reports/overview",
-                                    "/api/v1/reports/inventory")
+                                    "/api/v1/reports/inventory", "/api/v1/reports/inventory/movements")
                             .authenticated().anyRequest().denyAll();
                 })
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint)

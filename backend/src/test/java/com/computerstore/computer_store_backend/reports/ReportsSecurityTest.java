@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ReportsSecurityTest {
     private static final String BASE = "/api/v1/reports";
     private static final Set<String> READS = Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ");
-    private static final List<String> PATHS = List.of("/access", "/overview", "/inventory");
+    private static final List<String> PATHS = List.of("/access", "/overview", "/inventory", "/inventory/movements");
 
     @Autowired WebApplicationContext context;
     @Autowired RoleResolutionService roles;
@@ -126,10 +126,12 @@ class ReportsSecurityTest {
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
-            EmployeeUserDetailsService.class, GlobalExceptionHandler.class, ReportsService.class, ReportsController.class})
+            EmployeeUserDetailsService.class, GlobalExceptionHandler.class, ReportsService.class, ReportsController.class,
+            InventoryMovementService.class})
     static class Fixture {
         @Bean RoleResolutionService roles() { return mock(RoleResolutionService.class); }
         @Bean ReportsRepository reports() { return mock(ReportsRepository.class); }
+        @Bean InventoryMovementReportRepository transactions() { return mock(InventoryMovementReportRepository.class); }
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
     }
 }
