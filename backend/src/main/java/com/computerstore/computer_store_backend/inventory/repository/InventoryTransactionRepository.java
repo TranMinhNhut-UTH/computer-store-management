@@ -6,31 +6,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
-
-    interface MovementRow {
-        String getSku();
-        String getProductName();
-        InventoryTransactionType getMovementType();
-        long getQuantityDelta();
-        LocalDateTime getOccurredAt();
-    }
-
-    @Query("""
-            select p.sku as sku, p.name as productName, t.transactionType as movementType,
-                   t.quantityDelta as quantityDelta, t.occurredAt as occurredAt
-            from InventoryTransaction t join t.product p
-            where (:pattern is null or p.sku like upper(:pattern) escape '!' or p.name like :pattern escape '!')
-              and (:type is null or t.transactionType = :type)
-              and (:fromUtc is null or t.occurredAt >= :fromUtc)
-              and (:untilUtc is null or t.occurredAt < :untilUtc)
-            """)
-    Page<MovementRow> findMovements(String pattern, InventoryTransactionType type,
-            LocalDateTime fromUtc, LocalDateTime untilUtc, Pageable page);
 
     // Idempotency lớp 2 (bảo vệ cuối) — xem inventory-transaction-locking.md §FND-011.1
     boolean existsByPurchaseItemId(Long purchaseItemId);
@@ -47,4 +28,22 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
 
     boolean existsByReversalOfTransactionId(Long reversalOfTransactionId);
     Optional<InventoryTransaction> findByReversalOfTransactionId(Long reversalOfTransactionId);
+
+    @Query(value = "select t from InventoryTransaction t "
+            + "join fetch t.product p join fetch t.recordedBy u "
+            + "where (:productId is null or t.product.id = :productId) "
+            + "and (:type is null or t.transactionType = :type) "
+            + "and (:from is null or t.occurredAt >= :from) "
+            + "and (:to is null or t.occurredAt < :to)",
+            countQuery = "select count(t) from InventoryTransaction t "
+                    + "where (:productId is null or t.product.id = :productId) "
+                    + "and (:type is null or t.transactionType = :type) "
+                    + "and (:from is null or t.occurredAt >= :from) "
+                    + "and (:to is null or t.occurredAt < :to)")
+    Page<InventoryTransaction> search(
+            @Param("productId") Long productId,
+            @Param("type") InventoryTransactionType type,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            Pageable pageable);
 }

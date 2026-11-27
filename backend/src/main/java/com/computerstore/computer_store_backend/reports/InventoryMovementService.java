@@ -1,7 +1,6 @@
 package com.computerstore.computer_store_backend.reports;
 
 import com.computerstore.computer_store_backend.inventory.entity.InventoryTransactionType;
-import com.computerstore.computer_store_backend.inventory.repository.InventoryTransactionRepository;
 import com.computerstore.computer_store_backend.shared.error.BusinessException;
 import com.computerstore.computer_store_backend.shared.error.ErrorCode;
 import com.computerstore.computer_store_backend.shared.pagination.ListPagination;
@@ -21,9 +20,9 @@ public class InventoryMovementService {
     private static final ZoneId REPORT_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final LocalDateTime MYSQL_MIN_DATETIME = LocalDate.of(1000, 1, 1).atStartOfDay();
     private final ReportsService reports;
-    private final InventoryTransactionRepository transactions;
+    private final InventoryMovementReportRepository transactions;
 
-    public InventoryMovementService(ReportsService reports, InventoryTransactionRepository transactions) {
+    public InventoryMovementService(ReportsService reports, InventoryMovementReportRepository transactions) {
         this.reports = reports;
         this.transactions = transactions;
     }

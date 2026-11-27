@@ -9,7 +9,6 @@ import com.computerstore.computer_store_backend.identity.security.ApiAccessDenie
 import com.computerstore.computer_store_backend.identity.security.ApiAuthenticationEntryPoint;
 import com.computerstore.computer_store_backend.identity.security.EmployeeUserDetailsService;
 import com.computerstore.computer_store_backend.identity.security.SecurityConfig;
-import com.computerstore.computer_store_backend.inventory.repository.InventoryTransactionRepository;
 import com.computerstore.computer_store_backend.reports.ReportsOverview.StatusCounts;
 import com.computerstore.computer_store_backend.shared.error.GlobalExceptionHandler;
 import java.util.List;
@@ -132,7 +131,7 @@ class ReportsSecurityTest {
     static class Fixture {
         @Bean RoleResolutionService roles() { return mock(RoleResolutionService.class); }
         @Bean ReportsRepository reports() { return mock(ReportsRepository.class); }
-        @Bean InventoryTransactionRepository transactions() { return mock(InventoryTransactionRepository.class); }
+        @Bean InventoryMovementReportRepository transactions() { return mock(InventoryMovementReportRepository.class); }
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
     }
 }

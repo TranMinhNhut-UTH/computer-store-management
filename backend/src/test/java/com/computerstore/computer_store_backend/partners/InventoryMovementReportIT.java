@@ -1,12 +1,16 @@
 package com.computerstore.computer_store_backend.partners;
 
+import com.computerstore.computer_store_backend.inventory.entity.InventoryTransactionType;
+import com.computerstore.computer_store_backend.inventory.repository.InventoryTransactionRepository;
 import com.computerstore.computer_store_backend.partners.StaffManagementIT.Session;
 import com.computerstore.computer_store_backend.partners.SupplierPermissionRolloutIT.DisposableMysql;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
 
@@ -39,6 +43,13 @@ class InventoryMovementReportIT {
                 seedMovements(db, id);
                 var before = db.queryForList("SELECT * FROM inventory_transaction ORDER BY id");
                 verifyMovements(manager);
+                var inventory = app.getBean(InventoryTransactionRepository.class);
+                var sales = inventory.search(1L, InventoryTransactionType.SALE_OUT,
+                        LocalDateTime.parse("2026-11-26T17:00:00"), LocalDateTime.parse("2026-11-27T17:00:00"),
+                        PageRequest.of(0, 1));
+                assertEquals(1, sales.getTotalElements());
+                assertEquals(-9007199254740993L, sales.getContent().getFirst().getQuantityDelta());
+                assertEquals("history.manager", sales.getContent().getFirst().getRecordedBy().getUsername());
                 expect(200, manager.read("/api/v1/reports/overview"));
                 assertEquals(before, db.queryForList("SELECT * FROM inventory_transaction ORDER BY id"));
             }
