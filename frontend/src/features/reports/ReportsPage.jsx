@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { overviewKeys, reportsClient } from '../../api/reports.js'
+import { movementLabels, overviewKeys, reportsClient } from '../../api/reports.js'
 import { ListError } from '../../components/ui/ListError.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
@@ -7,6 +7,9 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { RecordPagination } from '../../components/ui/RecordPagination.jsx'
 import { StatusBadge } from '../../components/ui/StatusBadge.jsx'
+import { Button } from '../../components/ui/Button.jsx'
+import { TextInput } from '../../components/ui/TextInput.jsx'
+import { formatVietnameseDate } from '../../format/vietnameseDate.js'
 import '../categories/categories.css'
 import './reports.css'
 
@@ -94,6 +97,80 @@ function InventoryReport() {
   </Card>
 }
 
+function InventoryMovementReport() {
+  const [query, setQuery] = useState({ page: 0 })
+  const [settled, setSettled] = useState(null)
+  const [invalidRange, setInvalidRange] = useState(false)
+  const current = settled?.query === query ? settled : null
+
+  useEffect(() => {
+    const controller = new AbortController()
+    reportsClient.getMovements(query, { signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return
+      if (query.page > 0 && query.page >= data.totalPages) {
+        setQuery(previous => previous === query ? { ...query, page: Math.max(0, data.totalPages - 1) } : previous)
+      } else setSettled({ query, data })
+    }).catch(error => {
+      if (!controller.signal.aborted) setSettled({ query, error })
+    })
+    return () => controller.abort()
+  }, [query])
+
+  function applyFilters(event) {
+    event.preventDefault()
+    const values = new FormData(event.currentTarget)
+    const fromDate = values.get('fromDate')
+    const toDate = values.get('toDate')
+    const reversed = Boolean(fromDate && toDate && fromDate > toDate)
+    setInvalidRange(reversed)
+    if (!reversed) setQuery({ page: 0, q: values.get('q').trim(), type: values.get('type'), fromDate, toDate })
+  }
+
+  const { data, error } = current ?? {}
+  return <Card className="reports-breakdown" aria-labelledby="reports-movements">
+    <h2 id="reports-movements">Lịch sử biến động kho</h2>
+    <form className="reports-movement-filters" onSubmit={applyFilters}
+      onReset={() => { setInvalidRange(false); setQuery({ page: 0 }) }}>
+      <TextInput label="Sản phẩm / SKU" name="q" maxLength={200} />
+      <div className="csm-field">
+        <label htmlFor="reports-movement-type">Loại biến động</label>
+        <select id="reports-movement-type" name="type">
+          <option value="">Tất cả loại</option>
+          {Object.entries(movementLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+        </select>
+      </div>
+      <TextInput label="Từ ngày" name="fromDate" type="date" min="0001-01-01" max="9999-12-31" />
+      <TextInput label="Đến ngày" name="toDate" type="date" min="0001-01-01" max="9999-12-31"
+        onChange={() => setInvalidRange(false)} error={invalidRange ? 'Ngày kết thúc phải từ ngày bắt đầu trở đi.' : undefined} />
+      <div className="category-row-actions">
+        <Button type="submit">Áp dụng bộ lọc</Button>
+        <Button type="reset" variant="secondary">Xóa bộ lọc</Button>
+      </div>
+    </form>
+    {!current && <LoadingState label="Đang tải lịch sử biến động kho…" />}
+    {error && <ListError status={error.status} onRetry={() => setQuery({ ...query })}
+      message={reportError(error.status, error.status === 400 ? 'Bộ lọc không hợp lệ.' : 'Không thể tải lịch sử biến động kho.')} />}
+    {data && (data.items.length === 0
+      ? <EmptyState title="Không có biến động kho được ghi nhận cho bộ lọc này" />
+      : <>
+        <div className="reports-table reports-stock-table reports-movements-table" role="region"
+          aria-labelledby="reports-movements" tabIndex={0}>
+          <table aria-labelledby="reports-movements">
+            <thead><tr>{['Thời gian (Việt Nam)', 'SKU / Tên sản phẩm', 'Loại biến động', 'Số lượng thay đổi']
+              .map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
+            <tbody>{data.items.map((row, index) => <tr key={index}>
+              <td><time dateTime={row.occurredAt}>{formatVietnameseDate(row.occurredAt, { withTime: true })}</time></td>
+              <th scope="row"><span className="csm-muted">{row.sku}</span>{row.productName}</th>
+              <td>{movementLabels[row.movementType]}</td>
+              <td>{row.quantityDelta.startsWith('-') ? '' : '+'}{numbers.format(BigInt(row.quantityDelta))}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <RecordPagination result={data} noun="biến động kho" onPage={page => setQuery({ ...query, page })} />
+      </>)}
+  </Card>
+}
+
 export function ReportsPage() {
   const [request, setRequest] = useState({ phase: 'loading' })
   const [attempt, setAttempt] = useState(0)
@@ -142,6 +219,7 @@ export function ReportsPage() {
         </div>}
       </Card>
       <InventoryReport />
+      <InventoryMovementReport />
       <Card className="reports-breakdown">
         <h2>Số liệu chưa khả dụng</h2>
         <p className="csm-muted">Doanh thu, số bán và trả hàng đang chờ tích hợp dữ liệu giao dịch.</p>

@@ -27,6 +27,7 @@ class ProductInventoryCreationIT {
     private static final String SCHEMA = ReportsOverviewIT.SCHEMA;
     private static final String PRODUCTS = "/api/v1/products";
     private static final String CATEGORIES = "/api/v1/categories";
+    private static final String PRODUCT_STOCK = "/api/v1/reports/inventory/products/";
     private static final String PRICE = "9999999999999999999";
     @TempDir Path directory;
 
@@ -71,7 +72,7 @@ class ProductInventoryCreationIT {
         fixture(db, "manager.fixture", "MANAGER");
         fixture(db, "sales.fixture", "SALES_STAFF");
         for (var code : List.of("PRODUCT_READ", "PRODUCT_CREATE", "PRODUCT_UPDATE", "PRODUCT_PRICE_UPDATE",
-                "PRODUCT_DEACTIVATE", "CATEGORY_DEACTIVATE")) {
+                "PRODUCT_DEACTIVATE", "CATEGORY_DEACTIVATE", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ")) {
             db.update("INSERT INTO permission (code,name,created_at,updated_at) VALUES (?,?,UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))",
                     code, code);
             db.update("""
@@ -119,13 +120,43 @@ class ProductInventoryCreationIT {
         assertEquals(0, count(db, "SELECT COUNT(*) FROM inventory_transaction"));
         assertEquals(id, expect(200, manager.read(PRODUCTS + "?q=NEW-SKU")).get("items").get(0).get("id").asString());
         expect(409, manager.write("POST", PRODUCTS, input));
+        expect(401, anonymous.read(PRODUCT_STOCK + id));
+        expect(403, sales.read(PRODUCT_STOCK + id));
+        assertProductStock(db, manager, id);
 
         expect(200, manager.write("PUT", PRODUCTS + "/" + id, information("NEW-SKU", 1)));
         assertEquals("9007199254740993", expect(200, manager.write("PUT", PRODUCTS + "/" + id + "/price",
                 Map.of("sellingPrice", "9007199254740993"))).get("sellingPrice").asString());
         assertFalse(expect(200, manager.write("POST", PRODUCTS + "/" + id + "/deactivate", null))
                 .get("active").asBoolean());
+        expect(404, manager.read(PRODUCT_STOCK + id));
         assertZeroBalance(db, "NEW-SKU");
+    }
+
+    private static void assertProductStock(JdbcTemplate db, Session manager, String id) throws Exception {
+        expect(204, manager.read("/api/v1/reports/access"));
+        var path = PRODUCT_STOCK + id;
+        var empty = expect(200, manager.read(path));
+        assertEquals(6, empty.size());
+        assertEquals(id, empty.get("productId").asString());
+        assertEquals("NEW-SKU", empty.get("sku").asString());
+        assertEquals("Fixture new-sku", empty.get("productName").asString());
+        assertEquals("0", empty.get("quantityOnHand").asString());
+        assertEquals("4", empty.get("minStockLevel").asString());
+        assertEquals("OUT_OF_STOCK", empty.get("stockStatus").asString());
+
+        for (long quantity : List.of(3L, 4L, 9007199254740993L)) {
+            db.update("UPDATE inventory SET quantity_on_hand=? WHERE product_id=?", quantity, id);
+            var stock = expect(200, manager.read(path));
+            assertEquals(Long.toString(quantity), stock.get("quantityOnHand").asString());
+            assertEquals(quantity <= 4 ? "LOW_STOCK" : "NORMAL", stock.get("stockStatus").asString());
+        }
+        db.update("DELETE FROM inventory WHERE product_id=?", id);
+        assertEquals("BUSINESS_CONFLICT", expect(409, manager.read(path)).get("code").asString());
+        db.update("INSERT INTO inventory (product_id,quantity_on_hand,created_at,updated_at) VALUES (?,0,NOW(6),NOW(6))", id);
+        expect(404, manager.read(PRODUCT_STOCK + "999999"));
+        expect(400, manager.read(PRODUCT_STOCK + "9223372036854775808"));
+        expect(403, manager.read("/api/v1/inventory/balances"));
     }
 
     private static void assertRollback(JdbcTemplate db, Session manager) throws Exception {

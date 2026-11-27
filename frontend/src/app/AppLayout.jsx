@@ -49,7 +49,8 @@ export function AppLayout({ user, onLogout, onChangePassword, changingPassword, 
   const [capabilities, setCapabilities] = useState({ permissions: [] })
   const [capabilityAttempt, setCapabilityAttempt] = useState(0)
   const permissions = capabilities.userId === user.userId ? capabilities.permissions : []
-  const [canViewReports, setCanViewReports] = useState(false)
+  const [reportAccess, setReportAccess] = useState(null)
+  const canViewReports = reportAccess?.userId === user.userId && reportAccess.allowed
   const canBrowse = canViewReports || navigationGroups.some(group =>
     group.items.some(item => item.permission && permissions.includes(item.permission)))
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -74,8 +75,8 @@ export function AppLayout({ user, onLogout, onChangePassword, changingPassword, 
   useEffect(() => {
     const controller = new AbortController()
     reportsClient.canViewOverview({ signal: controller.signal }).then(
-      allowed => { if (!controller.signal.aborted) setCanViewReports(allowed) },
-      () => { if (!controller.signal.aborted) setCanViewReports(false) },
+      allowed => { if (!controller.signal.aborted) setReportAccess({ userId: user.userId, allowed }) },
+      () => { if (!controller.signal.aborted) setReportAccess({ userId: user.userId, allowed: false }) },
     )
     return () => controller.abort()
   }, [user.userId])
@@ -123,7 +124,8 @@ export function AppLayout({ user, onLogout, onChangePassword, changingPassword, 
       <main id="main-content" className="csm-main" tabIndex={-1} ref={heading} aria-labelledby="page-title">
         {error && <div className="message message-error" role="alert">{error}</div>}{notice && <p className="message message-success" role="status">{notice}</p>}
         {selectedId === 'account-security' ? <AccountSecurityPage onChangePassword={onChangePassword} disabled={changingPassword || loggingOut} />
-          : BusinessPage ? <BusinessPage permissions={permissions} currentUserId={user.userId} /> : selectedId === 'overview' ? <>
+          : BusinessPage ? <BusinessPage permissions={permissions} currentUserId={user.userId}
+            canViewStock={selectedId === 'products' && canViewReports} /> : selectedId === 'overview' ? <>
           <PageHeader title={current.label} />
           <Card aria-label={current.label}>
             {capabilities.loading ? <LoadingState label="Đang tải quyền truy cập…" />

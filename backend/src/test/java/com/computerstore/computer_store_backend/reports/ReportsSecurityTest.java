@@ -39,7 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ReportsSecurityTest {
     private static final String BASE = "/api/v1/reports";
     private static final Set<String> READS = Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ", "CUSTOMER_READ");
-    private static final List<String> PATHS = List.of("/access", "/overview", "/inventory");
+    private static final String PRODUCT_STOCK = "/inventory/products/42";
+    private static final List<String> PATHS = List.of("/access", "/overview", "/inventory", "/inventory/movements", PRODUCT_STOCK);
 
     @Autowired WebApplicationContext context;
     @Autowired RoleResolutionService roles;
@@ -61,6 +62,7 @@ class ReportsSecurityTest {
     @Test void managerNeedsEveryExistingReadGrantAndOtherRolesAreDenied() throws Exception {
         resolved(EmployeeRole.MANAGER, Set.of("PRODUCT_READ", "CATEGORY_READ", "SUPPLIER_READ"));
         mvc.perform(get(BASE + "/overview").with(user("fixture"))).andExpect(status().isForbidden());
+        mvc.perform(get(BASE + PRODUCT_STOCK).with(user("fixture"))).andExpect(status().isForbidden());
         mvc.perform(get(BASE + "/inventory").with(user("fixture"))).andExpect(status().isForbidden());
         mvc.perform(get(BASE + "/inventory").param("filter", "ALL").with(user("fixture")))
                 .andExpect(status().isForbidden());
@@ -116,6 +118,8 @@ class ReportsSecurityTest {
     @Test void reportWritesAndUnreleasedReportsRemainDenied() throws Exception {
         mvc.perform(post(BASE + "/overview").with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
         mvc.perform(post(BASE + "/inventory").with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(post(BASE + PRODUCT_STOCK).with(user("fixture")).with(csrf())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/inventory/balances").with(user("fixture"))).andExpect(status().isForbidden());
         mvc.perform(get(BASE + "/inventory/history").with(user("fixture"))).andExpect(status().isForbidden());
         verifyNoInteractions(roles, reports);
     }
@@ -126,10 +130,12 @@ class ReportsSecurityTest {
 
     @Configuration(proxyBeanMethods = false) @EnableWebMvc @EnableWebSecurity
     @Import({SecurityConfig.class, ApiAuthenticationEntryPoint.class, ApiAccessDeniedHandler.class,
-            EmployeeUserDetailsService.class, GlobalExceptionHandler.class, ReportsService.class, ReportsController.class})
+            EmployeeUserDetailsService.class, GlobalExceptionHandler.class, ReportsService.class, ReportsController.class,
+            InventoryMovementService.class})
     static class Fixture {
         @Bean RoleResolutionService roles() { return mock(RoleResolutionService.class); }
         @Bean ReportsRepository reports() { return mock(ReportsRepository.class); }
+        @Bean InventoryMovementReportRepository transactions() { return mock(InventoryMovementReportRepository.class); }
         @Bean AppUserRepository users() { return mock(AppUserRepository.class); }
     }
 }

@@ -171,7 +171,7 @@ class ReportsOverviewIT {
         }
     }
 
-    private static JdbcTemplate initializeWithoutFlyway(DisposableMysql mysql) throws Exception {
+    static JdbcTemplate initializeWithoutFlyway(DisposableMysql mysql) throws Exception {
         var db = createEmptySchema(mysql);
         try (var connection = db.getDataSource().getConnection()) {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V1__create_initial_schema.sql"));

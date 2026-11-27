@@ -3,20 +3,23 @@ import { ApiError, createApiTransport, validateListPage } from './client.js'
 const base = '/api/v1/reports'
 
 export const overviewKeys = ['products', 'categories', 'suppliers', 'customers']
+export const movementLabels = {
+  PURCHASE_IN: 'Nhập hàng', SALE_OUT: 'Xuất bán', RETURN_IN: 'Nhập hàng trả',
+  ADJUSTMENT_IN: 'Điều chỉnh tăng', ADJUSTMENT_OUT: 'Điều chỉnh giảm', SALE_CANCEL_IN: 'Nhập lại do hủy đơn',
+}
 
 const isCount = value => Number.isSafeInteger(value) && value >= 0
 const isBreakdown = value => [value?.total, value?.active, value?.inactive].every(isCount)
   && value.total === value.active + value.inactive
 const isQuantity = value => typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)
 
-function isStockProduct(row, filter) {
-  if (!['sku', 'productName', 'categoryName'].every(key => typeof row?.[key] === 'string')
+function isStockBalance(row) {
+  if (!['sku', 'productName'].every(key => typeof row?.[key] === 'string')
       || !isQuantity(row.quantityOnHand) || !isQuantity(row.minStockLevel)) return false
   const quantity = BigInt(row.quantityOnHand)
-  const low = quantity <= BigInt(row.minStockLevel)
-  const status = quantity === 0n ? 'OUT_OF_STOCK' : low ? 'LOW_STOCK' : 'NORMAL'
+  const status = quantity === 0n ? 'OUT_OF_STOCK'
+    : quantity <= BigInt(row.minStockLevel) ? 'LOW_STOCK' : 'NORMAL'
   return row.stockStatus === status
-    && (filter === 'ALL' || (filter === 'LOW' && low) || (filter === 'OUT' && quantity === 0n))
 }
 
 export function createReportsClient(fetchRequest) {
@@ -42,7 +45,30 @@ export function createReportsClient(fetchRequest) {
       if (![summary?.activeSkus, summary?.outOfStockSkus, summary?.lowStockSkus].every(isCount)
           || !isQuantity(summary.totalQuantity) || summary.outOfStockSkus > summary.lowStockSkus
           || summary.lowStockSkus > summary.activeSkus || total !== data.totalElements
-          || !data.items.every(row => isStockProduct(row, filter))) throw new ApiError(502)
+          || !data.items.every(row => typeof row?.categoryName === 'string' && isStockBalance(row)
+            && (filter === 'ALL' || (filter === 'LOW' && row.stockStatus !== 'NORMAL')
+              || (filter === 'OUT' && row.stockStatus === 'OUT_OF_STOCK')))) throw new ApiError(502)
+      return data
+    },
+    async getProductStock(productId, options) {
+      if (typeof productId !== 'string' || !/^[1-9][0-9]{0,18}$/.test(productId)) throw new ApiError(400)
+      const data = await request(`${base}/inventory/products/${productId}`, options)
+      if (data?.productId !== productId || !isStockBalance(data)) throw new ApiError(502)
+      return data
+    },
+    async getMovements({ page = 0, size = 20, q, type, fromDate, toDate } = {}, options) {
+      const params = new URLSearchParams({ page: String(page), size: String(size) })
+      for (const [key, value] of Object.entries({ q, type, fromDate, toDate })) {
+        if (value) params.set(key, value)
+      }
+      const data = await request(base + '/inventory/movements?' + params, options)
+      validateListPage(data, page, size)
+      if (!data.items.every(row => typeof row?.sku === 'string' && typeof row.productName === 'string'
+          && Object.hasOwn(movementLabels, row.movementType)
+          && typeof row.quantityDelta === 'string' && /^-?[1-9][0-9]*$/.test(row.quantityDelta)
+          && typeof row.occurredAt === 'string' && Number.isFinite(Date.parse(row.occurredAt)))) {
+        throw new ApiError(502)
+      }
       return data
     },
   }
